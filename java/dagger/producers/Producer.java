@@ -17,8 +17,8 @@
 package dagger.producers;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.errorprone.annotations.CheckReturnValue;
 import dagger.internal.Beta;
-import javax.annotation.CheckReturnValue;
 
 /**
  * An interface that represents the production of a type {@code T}. You can also inject
@@ -89,7 +89,7 @@ import javax.annotation.CheckReturnValue;
  *   Retrieved c
  * </code></pre>
  *
- * @author Jesse Beder
+ * @since 2.0
  */
 @Beta
 public interface Producer<T> {

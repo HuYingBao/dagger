@@ -19,12 +19,12 @@ package dagger.android;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.support.annotation.CallSuper;
+import androidx.annotation.CallSuper;
 import dagger.internal.Beta;
 
 /**
- * A {@link BroadcastReceiver} that injects its members in the first call to {@link
- * #onReceive(Context, Intent)}.
+ * A {@link BroadcastReceiver} that injects its members in every call to {@link #onReceive(Context,
+ * Intent)}.
  *
  * <p>This class should only be used for {@link BroadcastReceiver}s that are declared in an {@code
  * AndroidManifest.xml}. If, instead, the {@link BroadcastReceiver} is created in code, prefer

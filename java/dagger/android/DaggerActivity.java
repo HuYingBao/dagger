@@ -19,6 +19,7 @@ package dagger.android;
 import android.app.Activity;
 import android.app.Fragment;
 import android.os.Bundle;
+import androidx.annotation.Nullable;
 import dagger.internal.Beta;
 import javax.inject.Inject;
 
@@ -27,18 +28,18 @@ import javax.inject.Inject;
  * inject {@link Fragment}s attached to it.
  */
 @Beta
-public abstract class DaggerActivity extends Activity implements HasFragmentInjector {
+public abstract class DaggerActivity extends Activity implements HasAndroidInjector {
 
-  @Inject DispatchingAndroidInjector<Fragment> fragmentInjector;
+  @Inject DispatchingAndroidInjector<Object> androidInjector;
 
   @Override
-  protected void onCreate(Bundle savedInstanceState) {
+  protected void onCreate(@Nullable Bundle savedInstanceState) {
     AndroidInjection.inject(this);
     super.onCreate(savedInstanceState);
   }
 
   @Override
-  public AndroidInjector<Fragment> fragmentInjector() {
-    return fragmentInjector;
+  public AndroidInjector<Object> androidInjector() {
+    return androidInjector;
   }
 }

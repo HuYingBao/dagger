@@ -16,12 +16,10 @@
 
 package dagger.internal.codegen;
 
-import static com.google.common.truth.Truth.assertAbout;
 import static com.google.testing.compile.CompilationSubject.assertThat;
-import static com.google.testing.compile.JavaSourcesSubjectFactory.javaSources;
+import static dagger.internal.codegen.Compilers.compilerWithOptions;
 import static dagger.internal.codegen.Compilers.daggerCompiler;
 
-import com.google.common.collect.ImmutableList;
 import com.google.testing.compile.Compilation;
 import com.google.testing.compile.JavaFileObjects;
 import javax.tools.JavaFileObject;
@@ -29,9 +27,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Unit tests for {@link BindingGraphValidator} that exercise producer-specific logic.
- */
+/** Producer-specific validation tests. */
 @RunWith(JUnit4.class)
 public class ProductionGraphValidationTest {
   private static final JavaFileObject EXECUTOR_MODULE =
@@ -78,12 +74,14 @@ public class ProductionGraphValidationTest {
         "    return null;",
         "  }",
         "}");
-    assertAbout(javaSources()).that(ImmutableList.of(EXECUTOR_MODULE, module, component))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining("test.Bar cannot be provided without an @Inject constructor or from "
-            + "an @Provides- or @Produces-annotated method.")
-            .in(component).onLine(8);
+    Compilation compilation = daggerCompiler().compile(EXECUTOR_MODULE, module, component);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining(
+            "Bar cannot be provided without an @Inject constructor or an @Provides- or "
+                + "@Produces-annotated method.")
+        .inFile(component)
+        .onLineContaining("interface MyComponent");
   }
 
   @Test public void componentProductionWithNoDependencyChain() {
@@ -101,54 +99,68 @@ public class ProductionGraphValidationTest {
         "    ListenableFuture<A> getA();",
         "  }",
         "}");
-    String expectedError =
-        "test.TestClass.A cannot be provided without an @Provides- or @Produces-annotated method.";
-    assertAbout(javaSources()).that(ImmutableList.of(EXECUTOR_MODULE, component))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining(expectedError).in(component).onLine(11);
+
+    Compilation compilation = daggerCompiler().compile(EXECUTOR_MODULE, component);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining(
+            "TestClass.A cannot be provided without an @Provides- or @Produces-annotated "
+                + "method.")
+        .inFile(component)
+        .onLineContaining("interface AComponent");
   }
 
   @Test public void provisionDependsOnProduction() {
-    JavaFileObject component = JavaFileObjects.forSourceLines("test.TestClass",
-        "package test;",
-        "",
-        "import com.google.common.util.concurrent.ListenableFuture;",
-        "import dagger.Module;",
-        "import dagger.Provides;",
-        "import dagger.producers.ProducerModule;",
-        "import dagger.producers.Produces;",
-        "import dagger.producers.ProductionComponent;",
-        "",
-        "final class TestClass {",
-        "  interface A {}",
-        "  interface B {}",
-        "",
-        "  @Module",
-        "  final class AModule {",
-        "    @Provides A a(B b) {",
-        "      return null;",
-        "    }",
-        "  }",
-        "",
-        "  @ProducerModule",
-        "  final class BModule {",
-        "    @Produces ListenableFuture<B> b() {",
-        "      return null;",
-        "    }",
-        "  }",
-        "",
-        "  @ProductionComponent(modules = {ExecutorModule.class, AModule.class, BModule.class})",
-        "  interface AComponent {",
-        "    ListenableFuture<A> getA();",
-        "  }",
-        "}");
-    String expectedError =
-        "test.TestClass.A is a provision, which cannot depend on a production.";
-    assertAbout(javaSources()).that(ImmutableList.of(EXECUTOR_MODULE, component))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining(expectedError).in(component).onLine(30);
+    JavaFileObject component =
+        JavaFileObjects.forSourceLines(
+            "test.TestClass",
+            "package test;",
+            "",
+            "import com.google.common.util.concurrent.ListenableFuture;",
+            "import dagger.Provides;",
+            "import dagger.producers.ProducerModule;",
+            "import dagger.producers.Produces;",
+            "import dagger.producers.ProductionComponent;",
+            "",
+            "final class TestClass {",
+            "  interface A {}",
+            "  interface B {}",
+            "",
+            "  @ProducerModule(includes = BModule.class)",
+            "  final class AModule {",
+            "    @Provides A a(B b) {",
+            "      return null;",
+            "    }",
+            "  }",
+            "",
+            "  @ProducerModule",
+            "  final class BModule {",
+            "    @Produces ListenableFuture<B> b() {",
+            "      return null;",
+            "    }",
+            "  }",
+            "",
+            "  @ProductionComponent(modules = {ExecutorModule.class, AModule.class})",
+            "  interface AComponent {",
+            "    ListenableFuture<A> getA();",
+            "  }",
+            "}");
+
+    Compilation compilation = daggerCompiler().compile(EXECUTOR_MODULE, component);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("TestClass.A is a provision, which cannot depend on a production.")
+        .inFile(component)
+        .onLineContaining("interface AComponent");
+
+    compilation =
+        compilerWithOptions("-Adagger.fullBindingGraphValidation=ERROR")
+            .compile(EXECUTOR_MODULE, component);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("TestClass.A is a provision, which cannot depend on a production.")
+        .inFile(component)
+        .onLineContaining("class AModule");
   }
 
   @Test public void provisionEntryPointDependsOnProduction() {
@@ -177,12 +189,14 @@ public class ProductionGraphValidationTest {
             "    A getA();",
             "  }",
             "}");
-    String expectedError =
-        "test.TestClass.A is a provision entry-point, which cannot depend on a production.";
-    assertAbout(javaSources()).that(ImmutableList.of(EXECUTOR_MODULE, component))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining(expectedError).in(component).onLine(20);
+
+    Compilation compilation = daggerCompiler().compile(EXECUTOR_MODULE, component);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining(
+            "TestClass.A is a provision entry-point, which cannot depend on a production.")
+        .inFile(component)
+        .onLineContaining("interface AComponent");
   }
 
   @Test
@@ -235,13 +249,12 @@ public class ProductionGraphValidationTest {
             "    ListenableFuture<B> b();",
             "  }",
             "}");
-    assertAbout(javaSources())
-        .that(ImmutableList.of(EXECUTOR_MODULE, component))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining("test.TestClass.A is a provision, which cannot depend on a production")
-        .in(component)
-        .onLine(43);
+    Compilation compilation = daggerCompiler().compile(EXECUTOR_MODULE, component);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("TestClass.A is a provision, which cannot depend on a production")
+        .inFile(component)
+        .onLineContaining("interface AComponent");
   }
 
   @Test
@@ -285,14 +298,14 @@ public class ProductionGraphValidationTest {
             "    ListenableFuture<String> getString();",
             "  }",
             "}");
-    String expectedError =
-        "test.TestClass.A cannot be provided without an @Provides-annotated method.";
-    assertAbout(javaSources()).that(ImmutableList.of(EXECUTOR_MODULE, component))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining(expectedError)
-        .in(component)
-        .onLine(34);
+
+    Compilation compilation = daggerCompiler().compile(EXECUTOR_MODULE, component);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining(
+            "TestClass.A cannot be provided without an @Provides-annotated method.")
+        .inFile(component)
+        .onLineContaining("interface StringComponent");
   }
 
   @Test
@@ -339,16 +352,16 @@ public class ProductionGraphValidationTest {
             "    ListenableFuture<String> getString();",
             "  }",
             "}");
-    String expectedError =
-        "java.util.Set<dagger.producers.monitoring.ProductionComponentMonitor.Factory>"
-            + " test.TestClass.MonitoringModule#monitorFactory is a provision,"
-            + " which cannot depend on a production.";
-    assertAbout(javaSources()).that(ImmutableList.of(EXECUTOR_MODULE, component))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining(expectedError)
-        .in(component)
-        .onLine(37);
+
+    Compilation compilation = daggerCompiler().compile(EXECUTOR_MODULE, component);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining(
+            "Set<ProductionComponentMonitor.Factory>"
+                + " TestClass.MonitoringModule#monitorFactory is a provision,"
+                + " which cannot depend on a production.")
+        .inFile(component)
+        .onLineContaining("interface StringComponent");
   }
 
   @Test
@@ -387,13 +400,12 @@ public class ProductionGraphValidationTest {
             "    return string;",
             "  }",
             "}");
-    assertAbout(javaSources())
-        .that(ImmutableList.of(EXECUTOR_MODULE, component, module))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining("cycle")
-        .in(component)
-        .onLine(8);
+    Compilation compilation = daggerCompiler().compile(EXECUTOR_MODULE, component, module);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("cycle")
+        .inFile(component)
+        .onLineContaining("interface TestComponent");
   }
 
   @Test
@@ -433,13 +445,12 @@ public class ProductionGraphValidationTest {
             "    return string;",
             "  }",
             "}");
-    assertAbout(javaSources())
-        .that(ImmutableList.of(EXECUTOR_MODULE, component, module))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining("cycle")
-        .in(component)
-        .onLine(8);
+    Compilation compilation = daggerCompiler().compile(EXECUTOR_MODULE, component, module);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("cycle")
+        .inFile(component)
+        .onLineContaining("interface TestComponent");
   }
   
   @Test
@@ -477,7 +488,7 @@ public class ProductionGraphValidationTest {
     Compilation compilation = daggerCompiler().compile(badModule, badComponent);
     assertThat(compilation).failed();
     assertThat(compilation)
-        .hadErrorContaining("test.BadModule has errors")
+        .hadErrorContaining("BadModule has errors")
         .inFile(badComponent)
         .onLine(7);
   }

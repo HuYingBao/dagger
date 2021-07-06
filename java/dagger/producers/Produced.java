@@ -19,10 +19,10 @@ package dagger.producers;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.base.Objects;
+import com.google.errorprone.annotations.CheckReturnValue;
 import dagger.internal.Beta;
 import java.util.concurrent.ExecutionException;
-import javax.annotation.CheckReturnValue;
-import javax.annotation.Nullable;
+import org.checkerframework.checker.nullness.compatqual.NullableDecl;
 
 /**
  * An interface that represents the result of a {@linkplain Producer production} of type {@code T},
@@ -42,7 +42,7 @@ import javax.annotation.Nullable;
  *   }
  * </code></pre>
  *
- * @author Jesse Beder
+ * @since 2.0
  */
 @Beta
 @CheckReturnValue
@@ -66,7 +66,7 @@ public abstract class Produced<T> {
   public abstract int hashCode();
 
   /** Returns a successful {@code Produced}, whose {@link #get} will return the given value. */
-  public static <T> Produced<T> successful(@Nullable T value) {
+  public static <T> Produced<T> successful(@NullableDecl T value) {
     return new Successful<T>(value);
   }
 
@@ -79,17 +79,20 @@ public abstract class Produced<T> {
   }
 
   private static final class Successful<T> extends Produced<T> {
-    @Nullable private final T value;
+    @NullableDecl private final T value;
 
-    private Successful(@Nullable T value) {
+    private Successful(@NullableDecl T value) {
       this.value = value;
     }
 
-    @Override public T get() {
+    @Override
+    @NullableDecl
+    public T get() {
       return value;
     }
 
-    @Override public boolean equals(Object o) {
+    @Override
+    public boolean equals(Object o) {
       if (o == this) {
         return true;
       } else if (o instanceof Successful) {
@@ -100,8 +103,14 @@ public abstract class Produced<T> {
       }
     }
 
-    @Override public int hashCode() {
+    @Override
+    public int hashCode() {
       return value == null ? 0 : value.hashCode();
+    }
+
+    @Override
+    public String toString() {
+      return "Produced[" + value + "]";
     }
   }
 
@@ -112,11 +121,13 @@ public abstract class Produced<T> {
       this.throwable = checkNotNull(throwable);
     }
 
-    @Override public T get() throws ExecutionException {
+    @Override
+    public T get() throws ExecutionException {
       throw new ExecutionException(throwable);
     }
 
-    @Override public boolean equals(Object o) {
+    @Override
+    public boolean equals(Object o) {
       if (o == this) {
         return true;
       } else if (o instanceof Failed) {
@@ -127,8 +138,14 @@ public abstract class Produced<T> {
       }
     }
 
-    @Override public int hashCode() {
+    @Override
+    public int hashCode() {
       return throwable.hashCode();
+    }
+
+    @Override
+    public String toString() {
+      return "Produced[failed with " + throwable.getClass().getCanonicalName() + "]";
     }
   }
 

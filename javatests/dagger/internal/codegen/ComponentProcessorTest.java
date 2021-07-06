@@ -18,127 +18,45 @@ package dagger.internal.codegen;
 
 import static com.google.testing.compile.CompilationSubject.assertThat;
 import static com.google.testing.compile.Compiler.javac;
-import static dagger.internal.codegen.GeneratedLines.GENERATED_ANNOTATION;
+import static dagger.internal.codegen.CompilerMode.DEFAULT_MODE;
+import static dagger.internal.codegen.CompilerMode.FAST_INIT_MODE;
+import static dagger.internal.codegen.Compilers.compilerWithOptions;
+import static dagger.internal.codegen.Compilers.daggerCompiler;
 
 import com.google.auto.common.MoreElements;
-import com.google.common.base.Joiner;
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.google.testing.compile.Compilation;
-import com.google.testing.compile.Compiler;
 import com.google.testing.compile.JavaFileObjects;
-import com.squareup.javapoet.CodeBlock;
 import dagger.MembersInjector;
-import java.io.IOException;
-import java.io.Writer;
 import java.lang.annotation.Annotation;
+import java.util.Collection;
 import java.util.Set;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.ProcessingEnvironment;
-import javax.annotation.processing.Processor;
 import javax.annotation.processing.RoundEnvironment;
 import javax.inject.Inject;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 import javax.tools.JavaFileObject;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameters;
 
-@RunWith(JUnit4.class)
+@RunWith(Parameterized.class)
 public class ComponentProcessorTest {
-  private static final CodeBlock NPE_LITERAL =
-      CodeBlocks.stringLiteral(ErrorMessages.CANNOT_RETURN_NULL_FROM_NON_NULLABLE_COMPONENT_METHOD);
-
-  @Test public void componentOnConcreteClass() {
-    JavaFileObject componentFile = JavaFileObjects.forSourceLines("test.NotAComponent",
-        "package test;",
-        "",
-        "import dagger.Component;",
-        "",
-        "@Component",
-        "final class NotAComponent {}");
-    Compilation compilation = daggerCompiler().compile(componentFile);
-    assertThat(compilation).failed();
-    assertThat(compilation).hadErrorContaining("interface");
+  @Parameters(name = "{0}")
+  public static Collection<Object[]> parameters() {
+    return CompilerMode.TEST_PARAMETERS;
   }
 
-  @Test public void componentOnEnum() {
-    JavaFileObject componentFile = JavaFileObjects.forSourceLines("test.NotAComponent",
-        "package test;",
-        "",
-        "import dagger.Component;",
-        "",
-        "@Component",
-        "enum NotAComponent {",
-        "  INSTANCE",
-        "}");
-    Compilation compilation = daggerCompiler().compile(componentFile);
-    assertThat(compilation).failed();
-    assertThat(compilation).hadErrorContaining("interface");
-  }
+  private final CompilerMode compilerMode;
 
-  @Test public void componentOnAnnotation() {
-    JavaFileObject componentFile = JavaFileObjects.forSourceLines("test.NotAComponent",
-        "package test;",
-        "",
-        "import dagger.Component;",
-        "",
-        "@Component",
-        "@interface NotAComponent {}");
-    Compilation compilation = daggerCompiler().compile(componentFile);
-    assertThat(compilation).failed();
-    assertThat(compilation).hadErrorContaining("interface");
-  }
-
-  @Test public void nonModuleModule() {
-    JavaFileObject componentFile = JavaFileObjects.forSourceLines("test.NotAComponent",
-        "package test;",
-        "",
-        "import dagger.Component;",
-        "",
-        "@Component(modules = Object.class)",
-        "interface NotAComponent {}");
-    Compilation compilation = daggerCompiler().compile(componentFile);
-    assertThat(compilation).failed();
-    assertThat(compilation).hadErrorContaining("is not annotated with @Module");
-  }
-
-  @Test
-  public void componentWithInvalidModule() {
-    JavaFileObject module =
-        JavaFileObjects.forSourceLines(
-            "test.BadModule",
-            "package test;",
-            "",
-            "import dagger.Binds;",
-            "import dagger.Module;",
-            "",
-            "@Module",
-            "abstract class BadModule {",
-            "  @Binds abstract Object noParameters();",
-            "}");
-    JavaFileObject component =
-        JavaFileObjects.forSourceLines(
-            "test.BadComponent",
-            "package test;",
-            "",
-            "import dagger.Component;",
-            "",
-            "@Component(modules = BadModule.class)",
-            "interface BadComponent {",
-            "  Object object();",
-            "}");
-    Compilation compilation = daggerCompiler().compile(module, component);
-    assertThat(compilation)
-        .hadErrorContaining("test.BadModule has errors")
-        .inFile(component)
-        .onLine(5);
+  public ComponentProcessorTest(CompilerMode compilerMode) {
+    this.compilerMode = compilerMode;
   }
 
   @Test public void doubleBindingFromResolvedModules() {
@@ -185,14 +103,16 @@ public class ComponentProcessorTest {
         "  List<Integer> listOfInteger();",
         "}");
 
-    Compilation compilation = daggerCompiler().compile(parent, child, another, componentFile);
+    Compilation compilation =
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(parent, child, another, componentFile);
     assertThat(compilation).failed();
     assertThat(compilation)
-        .hadErrorContaining("java.util.List<java.lang.Integer> is bound multiple times");
+        .hadErrorContaining("List<Integer> is bound multiple times");
     assertThat(compilation)
-        .hadErrorContaining("@Provides List<Integer> test.ChildNumberModule.provideListB(Integer)");
+        .hadErrorContaining("@Provides List<Integer> ChildNumberModule.provideListB(Integer)");
     assertThat(compilation)
-        .hadErrorContaining("@Provides List<Integer> test.AnotherModule.provideListOfInteger()");
+        .hadErrorContaining("@Provides List<Integer> AnotherModule.provideListOfInteger()");
   }
 
   @Test public void privateNestedClassWithWarningThatIsAnErrorInComponent() {
@@ -218,8 +138,8 @@ public class ComponentProcessorTest {
         "  OuterClass outerClass();",
         "}");
     Compilation compilation =
-        daggerCompiler()
-            .withOptions("-Adagger.privateMemberValidation=WARNING")
+        compilerWithOptions(
+                compilerMode.javacopts().append("-Adagger.privateMemberValidation=WARNING"))
             .compile(outerClass, componentFile);
     assertThat(compilation).failed();
     assertThat(compilation)
@@ -248,59 +168,76 @@ public class ComponentProcessorTest {
         "  Lazy<SomeInjectableType> lazySomeInjectableType();",
         "  Provider<SomeInjectableType> someInjectableTypeProvider();",
         "}");
+
     JavaFileObject generatedComponent =
-        JavaFileObjects.forSourceLines(
-            "test.DaggerSimpleComponent",
-            "package test;",
-            "",
-            "import dagger.Lazy;",
-            "import dagger.internal.DoubleCheck;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
-            "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerSimpleComponent implements SimpleComponent {",
-            "  private DaggerSimpleComponent(Builder builder) {",
-            "    assert builder != null;",
-            "  }",
-            "",
-            "  public static Builder builder() {",
-            "    return new Builder();",
-            "  }",
-            "",
-            "  public static SimpleComponent create() {",
-            "    return new Builder().build();",
-            "  }",
-            "",
-            "  @Override",
-            "  public SomeInjectableType someInjectableType() {",
-            "    return new SomeInjectableType();",
-            "  }",
-            "",
-            "  @Override",
-            "  public Lazy<SomeInjectableType> lazySomeInjectableType() {",
-            "    return DoubleCheck.lazy(SomeInjectableType_Factory.create());",
-            "  }",
-            "",
-            "  @Override",
-            "  public Provider<SomeInjectableType> someInjectableTypeProvider() {",
-            "    return SomeInjectableType_Factory.create();",
-            "  }",
-            "",
-            "  public static final class Builder {",
-            "    private Builder() {",
-            "    }",
-            "",
-            "    public SimpleComponent build() {",
-            "      return new DaggerSimpleComponent(this);",
-            "    }",
-            "  }",
-            "}");
-    Compilation compilation = daggerCompiler().compile(injectableTypeFile, componentFile);
+        compilerMode
+            .javaFileBuilder("test.DaggerSimpleComponent")
+            .addLines(
+                "package test;",
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "final class DaggerSimpleComponent implements SimpleComponent {",
+                "  private final DaggerSimpleComponent simpleComponent = this;")
+            .addLinesIn(
+                FAST_INIT_MODE,
+                "  @SuppressWarnings(\"unchecked\")",
+                "  private void initialize() {",
+                "    this.someInjectableTypeProvider =",
+                "        new SwitchingProvider<>(simpleComponent, 0);",
+                "  }",
+                "",
+                "  @Override",
+                "  public SomeInjectableType someInjectableType() {",
+                "    return new SomeInjectableType();",
+                "  }",
+                "",
+                "  @Override",
+                "  public Lazy<SomeInjectableType> lazySomeInjectableType() {",
+                "    return DoubleCheck.lazy(someInjectableTypeProvider);",
+                "  }",
+                "",
+                "  @Override",
+                "  public Provider<SomeInjectableType> someInjectableTypeProvider() {",
+                "    return someInjectableTypeProvider",
+                "  }",
+                "",
+                "  private static final class SwitchingProvider<T> implements Provider<T> {",
+                "    private final DaggerSimpleComponent simpleComponent;",
+                "",
+                "    @SuppressWarnings(\"unchecked\")",
+                "    @Override",
+                "    public T get() {",
+                "      switch (id) {",
+                "        case 0: return (T) new SomeInjectableType();",
+                "        default: throw new AssertionError(id);",
+                "      }",
+                "    }")
+            .addLinesIn(
+                DEFAULT_MODE,
+                "  @Override",
+                "  public SomeInjectableType someInjectableType() {",
+                "    return new SomeInjectableType();",
+                "  }",
+                "",
+                "  @Override",
+                "  public Lazy<SomeInjectableType> lazySomeInjectableType() {",
+                "    return DoubleCheck.lazy(SomeInjectableType_Factory.create());",
+                "  }",
+                "",
+                "  @Override",
+                "  public Provider<SomeInjectableType> someInjectableTypeProvider() {",
+                "    return SomeInjectableType_Factory.create();",
+                "  }",
+                "}")
+            .build();
+
+    Compilation compilation =
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(injectableTypeFile, componentFile);
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerSimpleComponent")
-        .hasSourceEquivalentTo(generatedComponent);
+        .containsElementsIn(generatedComponent);
   }
 
   @Test public void componentWithScope() {
@@ -330,67 +267,64 @@ public class ComponentProcessorTest {
         "  Provider<SomeInjectableType> someInjectableTypeProvider();",
         "}");
     JavaFileObject generatedComponent =
-        JavaFileObjects.forSourceLines(
-            "test.DaggerSimpleComponent",
-            "package test;",
-            "",
-            "import dagger.Lazy;",
-            "import dagger.internal.DoubleCheck;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
-            "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerSimpleComponent implements SimpleComponent {",
-            "  private Provider<SomeInjectableType> someInjectableTypeProvider;",
-            "",
-            "  private DaggerSimpleComponent(Builder builder) {",
-            "    assert builder != null;",
-            "    initialize(builder);",
-            "  }",
-            "",
-            "  public static Builder builder() {",
-            "    return new Builder();",
-            "  }",
-            "",
-            "  public static SimpleComponent create() {",
-            "    return new Builder().build();",
-            "  }",
-            "",
-            "  @SuppressWarnings(\"unchecked\")",
-            "  private void initialize(final Builder builder) {",
-            "    this.someInjectableTypeProvider =",
-            "        DoubleCheck.provider(SomeInjectableType_Factory.create());",
-            "  }",
-            "",
-            "  @Override",
-            "  public SomeInjectableType someInjectableType() {",
-            "    return someInjectableTypeProvider.get();",
-            "  }",
-            "",
-            "  @Override",
-            "  public Lazy<SomeInjectableType> lazySomeInjectableType() {",
-            "    return DoubleCheck.lazy(someInjectableTypeProvider);",
-            "  }",
-            "",
-            "  @Override",
-            "  public Provider<SomeInjectableType> someInjectableTypeProvider() {",
-            "    return someInjectableTypeProvider;",
-            "  }",
-            "",
-            "  public static final class Builder {",
-            "    private Builder() {",
-            "    }",
-            "",
-            "    public SimpleComponent build() {",
-            "      return new DaggerSimpleComponent(this);",
-            "    }",
-            "  }",
-            "}");
-    Compilation compilation = daggerCompiler().compile(injectableTypeFile, componentFile);
+        compilerMode
+            .javaFileBuilder("test.DaggerSimpleComponent")
+            .addLines(
+                "package test;",
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "final class DaggerSimpleComponent implements SimpleComponent {",
+                "  private Provider<SomeInjectableType> someInjectableTypeProvider;")
+            .addLinesIn(
+                FAST_INIT_MODE,
+                "  @SuppressWarnings(\"unchecked\")",
+                "  private void initialize() {",
+                "    this.someInjectableTypeProvider =",
+                "        DoubleCheck.provider(",
+                "            new SwitchingProvider<SomeInjectableType>(simpleComponent, 0));",
+                "  }")
+            .addLinesIn(
+                DEFAULT_MODE,
+                "  @SuppressWarnings(\"unchecked\")",
+                "  private void initialize() {",
+                "    this.someInjectableTypeProvider =",
+                "        DoubleCheck.provider(SomeInjectableType_Factory.create());",
+                "  }")
+            .addLines(
+                "  @Override",
+                "  public SomeInjectableType someInjectableType() {",
+                "    return someInjectableTypeProvider.get();",
+                "  }",
+                "",
+                "  @Override",
+                "  public Lazy<SomeInjectableType> lazySomeInjectableType() {",
+                "    return DoubleCheck.lazy(someInjectableTypeProvider);",
+                "  }",
+                "",
+                "  @Override",
+                "  public Provider<SomeInjectableType> someInjectableTypeProvider() {",
+                "    return someInjectableTypeProvider;",
+                "  }")
+            .addLinesIn(
+                FAST_INIT_MODE,
+                "  private static final class SwitchingProvider<T> implements Provider<T> {",
+                "    @SuppressWarnings(\"unchecked\")",
+                "    @Override",
+                "    public T get() {",
+                "      switch (id) {",
+                "        case 0: return (T) new SomeInjectableType();",
+                "        default: throw new AssertionError(id);",
+                "      }",
+                "    }",
+                "  }")
+            .build();
+    Compilation compilation =
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(injectableTypeFile, componentFile);
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerSimpleComponent")
-        .hasSourceEquivalentTo(generatedComponent);
+        .containsElementsIn(generatedComponent);
   }
 
   @Test public void simpleComponentWithNesting() {
@@ -414,61 +348,40 @@ public class ComponentProcessorTest {
         "}");
 
     JavaFileObject generatedComponent =
-        JavaFileObjects.forSourceLines(
-            "test.DaggerOuterType_SimpleComponent",
-            "package test;",
-            "",
-            "import dagger.MembersInjector;",
-            "import javax.annotation.Generated;",
-            "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerOuterType_SimpleComponent",
-            "    implements OuterType.SimpleComponent {",
-            "  private MembersInjector<OuterType.B> bMembersInjector;",
-            "",
-            "  private DaggerOuterType_SimpleComponent(Builder builder) {",
-            "    assert builder != null;",
-            "    initialize(builder);",
-            "  }",
-            "",
-            "  public static Builder builder() {",
-            "    return new Builder();",
-            "  }",
-            "",
-            "  public static OuterType.SimpleComponent create() {",
-            "    return new Builder().build();",
-            "  }",
-            "",
-            "  @SuppressWarnings(\"unchecked\")",
-            "  private void initialize(final Builder builder) {",
-            "    this.bMembersInjector =",
-            "        OuterType_B_MembersInjector.create(OuterType_A_Factory.create());",
-            "  }",
-            "",
-            "  @Override",
-            "  public OuterType.A a() {",
-            "    return new OuterType.A();",
-            "  }",
-            "",
-            "  @Override",
-            "  public void inject(OuterType.B b) {",
-            "    bMembersInjector.injectMembers(b);",
-            "  }",
-            "",
-            "  public static final class Builder {",
-            "    private Builder() {",
-            "    }",
-            "",
-            "    public OuterType.SimpleComponent build() {",
-            "      return new DaggerOuterType_SimpleComponent(this);",
-            "    }",
-            "  }",
-            "}");
-    Compilation compilation = daggerCompiler().compile(nestedTypesFile);
+        compilerMode
+            .javaFileBuilder("test.DaggerOuterType_SimpleComponent")
+            .addLines(
+                "package test;",
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "final class DaggerOuterType_SimpleComponent",
+                "    implements OuterType.SimpleComponent {",
+                "  private DaggerOuterType_SimpleComponent() {}",
+                "",
+                "  @Override",
+                "  public OuterType.A a() {",
+                "    return new OuterType.A();",
+                "  }",
+                "",
+                "  @Override",
+                "  public void inject(OuterType.B b) {",
+                "    injectB(b);",
+                "  }",
+                "",
+                "  @CanIgnoreReturnValue",
+                "  private OuterType.B injectB(OuterType.B instance) {",
+                "    OuterType_B_MembersInjector.injectA(instance, new OuterType.A());",
+                "    return instance;",
+                "  }",
+                "}")
+            .build();
+
+    Compilation compilation =
+        compilerWithOptions(compilerMode.javacopts()).compile(nestedTypesFile);
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerOuterType_SimpleComponent")
-        .hasSourceEquivalentTo(generatedComponent);
+        .containsElementsIn(generatedComponent);
   }
 
   @Test public void componentWithModule() {
@@ -514,70 +427,57 @@ public class ComponentProcessorTest {
         "interface TestComponent {",
         "  A a();",
         "}");
+
     JavaFileObject generatedComponent =
-        JavaFileObjects.forSourceLines(
-            "test.DaggerTestComponent",
-            "package test;",
-            "",
-            "import dagger.internal.Preconditions;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
-            "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerTestComponent implements TestComponent {",
-            "  private Provider<B> bProvider;",
-            "  private Provider<A> aProvider;",
-            "",
-            "  private DaggerTestComponent(Builder builder) {",
-            "    assert builder != null;",
-            "    initialize(builder);",
-            "  }",
-            "",
-            "  public static Builder builder() {",
-            "    return new Builder();",
-            "  }",
-            "",
-            "  public static TestComponent create() {",
-            "    return new Builder().build();",
-            "  }",
-            "",
-            "  @SuppressWarnings(\"unchecked\")",
-            "  private void initialize(final Builder builder) {",
-            "    this.bProvider = TestModule_BFactory.create(builder.testModule,",
-            "        C_Factory.create());",
-            "    this.aProvider = A_Factory.create(bProvider);",
-            "  }",
-            "",
-            "  @Override",
-            "  public A a() {",
-            "    return new A(bProvider.get());",
-            "  }",
-            "",
-            "  public static final class Builder {",
-            "    private TestModule testModule;",
-            "",
-            "    private Builder() {",
-            "    }",
-            "",
-            "    public TestComponent build() {",
-            "      if (testModule == null) {",
-            "        this.testModule = new TestModule();",
-            "      }",
-            "      return new DaggerTestComponent(this);",
-            "    }",
-            "",
-            "    public Builder testModule(TestModule testModule) {",
-            "      this.testModule = Preconditions.checkNotNull(testModule);",
-            "      return this;",
-            "    }",
-            "  }",
-            "}");
+        compilerMode
+            .javaFileBuilder("test.DaggerTestComponent")
+            .addLines(
+                "package test;",
+                "",
+                GeneratedLines.generatedImports("import dagger.internal.Preconditions;"),
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "final class DaggerTestComponent implements TestComponent {",
+                "  private final TestModule testModule;",
+                "",
+                "  private DaggerTestComponent(TestModule testModuleParam) {",
+                "    this.testModule = testModuleParam;",
+                "  }",
+                "",
+                "  private B b() {",
+                "    return TestModule_BFactory.b(testModule, new C());",
+                "  }",
+                "",
+                "  @Override",
+                "  public A a() {",
+                "    return new A(b());",
+                "  }",
+                "",
+                "  static final class Builder {",
+                "    private TestModule testModule;",
+                "",
+                "    public Builder testModule(TestModule testModule) {",
+                "      this.testModule = Preconditions.checkNotNull(testModule);",
+                "      return this;",
+                "    }",
+                "",
+                "    public TestComponent build() {",
+                "      if (testModule == null) {",
+                "        this.testModule = new TestModule();",
+                "      }",
+                "      return new DaggerTestComponent(testModule);",
+                "    }",
+                "  }",
+                "}")
+            .build();
+
     Compilation compilation =
-        daggerCompiler().compile(aFile, bFile, cFile, moduleFile, componentFile);
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(aFile, bFile, cFile, moduleFile, componentFile);
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerTestComponent")
-        .hasSourceEquivalentTo(generatedComponent);
+        .containsElementsIn(generatedComponent);
   }
 
   @Test
@@ -627,65 +527,38 @@ public class ComponentProcessorTest {
             "package test;",
             "",
             "import dagger.Component;",
-            "import javax.inject.Provider;",
             "",
             "@Component(modules = TestModule.class)",
             "interface TestComponent {",
             "  A a();",
             "}");
+
     JavaFileObject generatedComponent =
-        JavaFileObjects.forSourceLines(
-            "test.DaggerTestComponent",
-            "package test;",
-            "",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
-            "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerTestComponent implements TestComponent {",
-            "  private Provider<B> bProvider;",
-            "  private Provider<A> aProvider;",
-            "",
-            "  private DaggerTestComponent(Builder builder) {",
-            "    assert builder != null;",
-            "    initialize(builder);",
-            "  }",
-            "",
-            "  public static Builder builder() {",
-            "    return new Builder();",
-            "  }",
-            "",
-            "  public static TestComponent create() {",
-            "    return new Builder().build();",
-            "  }",
-            "",
-            "  @SuppressWarnings(\"unchecked\")",
-            "  private void initialize(final Builder builder) {",
-            "    this.bProvider = TestModule_BFactory.create(C_Factory.create());",
-            "    this.aProvider = A_Factory.create(bProvider);",
-            "  }",
-            "",
-            "  @Override",
-            "  public A a() {",
-            "    return new A(TestModule.b(new C()));",
-            "  }",
-            "",
-            "  public static final class Builder {",
-            "",
-            "    private Builder() {",
-            "    }",
-            "",
-            "    public TestComponent build() {",
-            "      return new DaggerTestComponent(this);",
-            "    }",
-            "  }",
-            "}");
+        compilerMode
+            .javaFileBuilder("test.DaggerTestComponent")
+            .addLines(
+                "package test;",
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "final class DaggerTestComponent implements TestComponent {",
+                "  private B b() {",
+                "    return TestModule_BFactory.b(new C());",
+                "  }",
+                "",
+                "  @Override",
+                "  public A a() {",
+                "    return new A(b());",
+                "  }",
+                "}")
+            .build();
+
     Compilation compilation =
-        daggerCompiler().compile(aFile, bFile, cFile, moduleFile, componentFile);
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(aFile, bFile, cFile, moduleFile, componentFile);
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerTestComponent")
-        .hasSourceEquivalentTo(generatedComponent);
+        .containsElementsIn(generatedComponent);
   }
 
   @Test public void transitiveModuleDeps() {
@@ -750,7 +623,6 @@ public class ComponentProcessorTest {
         "package test;",
         "",
         "import dagger.Component;",
-        "import javax.inject.Provider;",
         "",
         "@Component(modules = TestModule.class)",
         "interface TestComponent {",
@@ -761,31 +633,11 @@ public class ComponentProcessorTest {
         "test.DaggerTestComponent",
         "package test;",
         "",
-        "import dagger.internal.Preconditions;",
-        "import javax.annotation.Generated;",
+        GeneratedLines.generatedImports("import dagger.internal.Preconditions;"),
         "",
-        GENERATED_ANNOTATION,
-        "public final class DaggerTestComponent implements TestComponent {",
-        "",
-        "  private DaggerTestComponent(Builder builder) {",
-        "    assert builder != null;",
-        "  }",
-        "",
-        "  public static Builder builder() {",
-        "    return new Builder();",
-        "  }",
-        "",
-        "  public static TestComponent create() {",
-        "    return new Builder().build();",
-        "  }",
-        "",
-        "  public static final class Builder {",
-        "    private Builder() {",
-        "    }",
-        "",
-        "    public TestComponent build() {",
-        "      return new DaggerTestComponent(this);",
-        "    }",
+        GeneratedLines.generatedAnnotations(),
+        "final class DaggerTestComponent implements TestComponent {",
+        "  static final class Builder {",
         "",
         "    @Deprecated",
         "    public Builder testModule(TestModule testModule) {",
@@ -822,10 +674,14 @@ public class ComponentProcessorTest {
         "      Preconditions.checkNotNull(refByDep)",
         "      return this;",
         "    }",
+        "",
+        "    public TestComponent build() {",
+        "      return new DaggerTestComponent();",
+        "    }",
         "  }",
         "}");
     Compilation compilation =
-        daggerCompiler()
+        compilerWithOptions(compilerMode.javacopts())
             .compile(
                 always,
                 testModule,
@@ -839,7 +695,7 @@ public class ComponentProcessorTest {
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerTestComponent")
-        .hasSourceEquivalentTo(generatedComponent);
+        .containsElementsIn(generatedComponent);
   }
 
   @Test
@@ -858,7 +714,9 @@ public class ComponentProcessorTest {
         "",
         "@Component(modules = RootModule.class)",
         "interface TestComponent {}");
-    assertThat(daggerCompiler().compile(rootModule, component)).failed();
+    assertThat(
+            compilerWithOptions(compilerMode.javacopts()).compile(rootModule, component))
+        .failed();
     assertThat(
             daggerCompiler(
                     new GeneratingProcessor(
@@ -895,7 +753,9 @@ public class ComponentProcessorTest {
             "interface TestComponent {",
             "  ChildComponent childComponent();",
             "}");
-    assertThat(daggerCompiler().compile(subcomponent, component)).failed();
+    assertThat(
+            compilerWithOptions(compilerMode.javacopts()).compile(subcomponent, component))
+        .failed();
     assertThat(
             daggerCompiler(
                     new GeneratingProcessor(
@@ -908,154 +768,6 @@ public class ComponentProcessorTest {
                         "final class GeneratedModule {}"))
                 .compile(subcomponent, component))
         .succeeded();
-  }
-
-  @Test
-  public void subcomponentOmitsInheritedBindings() {
-    JavaFileObject parent =
-        JavaFileObjects.forSourceLines(
-            "test.Parent",
-            "package test;",
-            "",
-            "import dagger.Component;",
-            "",
-            "@Component(modules = ParentModule.class)",
-            "interface Parent {",
-            "  Child child();",
-            "}");
-    JavaFileObject parentModule =
-        JavaFileObjects.forSourceLines(
-            "test.ParentModule",
-            "package test;",
-            "",
-            "import dagger.Module;",
-            "import dagger.Provides;",
-            "import dagger.multibindings.IntoSet;",
-            "import dagger.multibindings.IntoMap;",
-            "import dagger.multibindings.StringKey;",
-            "",
-            "@Module",
-            "class ParentModule {",
-            "  @Provides @IntoSet static Object parentObject() {",
-            "    return \"parent object\";",
-            "  }",
-            "",
-            "  @Provides @IntoMap @StringKey(\"parent key\") Object parentKeyObject() {",
-            "    return \"parent value\";",
-            "  }",
-            "}");
-    JavaFileObject child =
-        JavaFileObjects.forSourceLines(
-            "test.Child",
-            "package test;",
-            "",
-            "import dagger.Subcomponent;",
-            "import java.util.Map;",
-            "import java.util.Set;",
-            "",
-            "@Subcomponent",
-            "interface Child {",
-            "  Set<Object> objectSet();",
-            "  Map<String, Object> objectMap();",
-            "}");
-    JavaFileObject expected =
-        JavaFileObjects.forSourceLines(
-            "test.DaggerParent",
-            "package test;",
-            "",
-            "import dagger.internal.MapFactory;",
-            "import dagger.internal.MapProviderFactory;",
-            "import dagger.internal.Preconditions;",
-            "import dagger.internal.SetFactory;",
-            "import java.util.Map;",
-            "import java.util.Set;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
-            "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerParent implements Parent {",
-            "  private Provider<Object> parentKeyObjectProvider;",
-            "",
-            "  private DaggerParent(Builder builder) {",
-            "    assert builder != null;",
-            "    initialize(builder);",
-            "  }",
-            "",
-            "  public static Builder builder() {",
-            "    return new Builder();",
-            "  }",
-            "",
-            "  public static Parent create() {",
-            "    return new Builder().build();",
-            "  }",
-            "",
-            "  @SuppressWarnings(\"unchecked\")",
-            "  private void initialize(final Builder builder) {",
-            "    this.parentKeyObjectProvider =",
-            "        ParentModule_ParentKeyObjectFactory.create(builder.parentModule);",
-            "  }",
-            "",
-            "  @Override",
-            "  public Child child() {",
-            "    return new ChildImpl();",
-            "  }",
-            "",
-            "  public static final class Builder {",
-            "    private ParentModule parentModule;",
-            "",
-            "    private Builder() {}",
-            "",
-            "    public Parent build() {",
-            "      if (parentModule == null) {",
-            "        this.parentModule = new ParentModule();",
-            "      }",
-            "      return new DaggerParent(this);",
-            "    }",
-            "",
-            "    public Builder parentModule(ParentModule parentModule) {",
-            "      this.parentModule = Preconditions.checkNotNull(parentModule);",
-            "      return this;",
-            "    }",
-            "  }",
-            "",
-            "  private final class ChildImpl implements Child {",
-            "    private Provider<Set<Object>> setOfObjectProvider;",
-            "    private Provider<Map<String, Provider<Object>>>",
-            "        mapOfStringAndProviderOfObjectProvider;",
-            "    private Provider<Map<String, Object>> mapOfStringAndObjectProvider;",
-            "",
-            "    private ChildImpl() {",
-            "      initialize();",
-            "    }",
-            "",
-            "    @SuppressWarnings(\"unchecked\")",
-            "    private void initialize() {",
-            "      this.setOfObjectProvider = SetFactory.<Object>builder(1, 0)",
-            "          .addProvider(ParentModule_ParentObjectFactory.create()).build();",
-            "      this.mapOfStringAndProviderOfObjectProvider =",
-            "          MapProviderFactory.<String, Object>builder(1)",
-            "              .put(\"parent key\", DaggerParent.this.parentKeyObjectProvider)",
-            "              .build();",
-            "      this.mapOfStringAndObjectProvider = MapFactory.create(",
-            "          mapOfStringAndProviderOfObjectProvider);",
-            "    }",
-            "",
-            "    @Override",
-            "    public Set<Object> objectSet() {",
-            "      return setOfObjectProvider.get();",
-            "    }",
-            "",
-            "    @Override",
-            "    public Map<String, Object> objectMap() {",
-            "      return mapOfStringAndObjectProvider.get();",
-            "    }",
-            "  }",
-            "}");
-    Compilation compilation = daggerCompiler().compile(parent, parentModule, child);
-    assertThat(compilation).succeeded();
-    assertThat(compilation)
-        .generatedSourceFile("test.DaggerParent")
-        .hasSourceEquivalentTo(expected);
   }
 
   @Test
@@ -1099,20 +811,18 @@ public class ComponentProcessorTest {
             "  }",
             "}");
 
-    JavaFileObject generatedComponentWithoutSubcomponent =
+    JavaFileObject generatedComponent =
         JavaFileObjects.forSourceLines(
             "test.DaggerParent",
             "package test;",
             "",
-            "import dagger.internal.Preconditions;",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports("import dagger.internal.Preconditions;"),
             "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerParent implements Parent {",
+            GeneratedLines.generatedAnnotations(),
+            "final class DaggerParent implements Parent {",
+            "  private final DaggerParent parent = this;",
             "",
-            "  private DaggerParent(Builder builder) {",
-            "    assert builder != null;",
-            "  }",
+            "  private DaggerParent() {}",
             "",
             "  public static Builder builder() {",
             "    return new Builder();",
@@ -1124,31 +834,31 @@ public class ComponentProcessorTest {
             "",
             "  @Override",
             "  public String notSubcomponent() {",
-            "    return ParentModule.notSubcomponent();",
+            "    return ParentModule_NotSubcomponentFactory.notSubcomponent();",
             "  }",
             "",
-            "  public static final class Builder {",
+            "  static final class Builder {",
             "",
-            "    private Builder() {",
-            "    }",
-            "",
-            "    public Parent build() {",
-            "      return new DaggerParent(this);",
-            "    }",
+            "    private Builder() {}",
             "",
             "    @Deprecated",
             "    public Builder parentModule(ParentModule parentModule) {",
             "      Preconditions.checkNotNull(parentModule);",
             "      return this;",
             "    }",
+            "",
+            "    public Parent build() {",
+            "      return new DaggerParent();",
+            "    }",
             "  }",
             "}");
-
-    Compilation compilation = daggerCompiler().compile(component, module, subcomponent);
+    Compilation compilation =
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(component, module, subcomponent);
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerParent")
-        .hasSourceEquivalentTo(generatedComponentWithoutSubcomponent);
+        .hasSourceEquivalentTo(generatedComponent);
   }
 
   @Test
@@ -1176,127 +886,10 @@ public class ComponentProcessorTest {
         "interface SomeComponent {",
         "  BClass bClass();",
         "}");
-    assertThat(daggerCompiler().compile(aModule, aClass, bClass, component)).succeeded();
-  }
-
-  @Test public void setBindings() {
-    JavaFileObject emptySetModuleFile = JavaFileObjects.forSourceLines("test.EmptySetModule",
-        "package test;",
-        "",
-        "import dagger.Module;",
-        "import dagger.Provides;",
-        "import dagger.multibindings.ElementsIntoSet;",
-        "import java.util.Collections;",
-        "import java.util.Set;",
-        "",
-        "@Module",
-        "final class EmptySetModule {",
-        "  @Provides @ElementsIntoSet Set<String> emptySet() { return Collections.emptySet(); }",
-        "}");
-    JavaFileObject setModuleFile = JavaFileObjects.forSourceLines("test.SetModule",
-        "package test;",
-        "",
-        "import dagger.Module;",
-        "import dagger.Provides;",
-        "import dagger.multibindings.IntoSet;",
-        "",
-        "@Module",
-        "final class SetModule {",
-        "  @Provides @IntoSet String string() { return \"\"; }",
-        "}");
-    JavaFileObject componentFile = JavaFileObjects.forSourceLines("test.TestComponent",
-        "package test;",
-        "",
-        "import dagger.Component;",
-        "import java.util.Set;",
-        "import javax.inject.Provider;",
-        "",
-        "@Component(modules = {EmptySetModule.class, SetModule.class})",
-        "interface TestComponent {",
-        "  Set<String> strings();",
-        "}");
-    JavaFileObject generatedComponent =
-        JavaFileObjects.forSourceLines(
-            "test.DaggerTestComponent",
-            "package test;",
-            "",
-            "import dagger.internal.Preconditions;",
-            "import dagger.internal.SetFactory;",
-            "import java.util.Set;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
-            "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerTestComponent implements TestComponent {",
-            "  private Provider<Set<String>> emptySetProvider;",
-            "  private Provider<String> stringProvider;",
-            "  private Provider<Set<String>> setOfStringProvider;",
-            "",
-            "  private DaggerTestComponent(Builder builder) {",
-            "    assert builder != null;",
-            "    initialize(builder);",
-            "  }",
-            "",
-            "  public static Builder builder() {",
-            "    return new Builder();",
-            "  }",
-            "",
-            "  public static TestComponent create() {",
-            "    return new Builder().build();",
-            "  }",
-            "",
-            "  @SuppressWarnings(\"unchecked\")",
-            "  private void initialize(final Builder builder) {",
-            "    this.emptySetProvider =",
-            "        EmptySetModule_EmptySetFactory.create(builder.emptySetModule);",
-            "    this.stringProvider =",
-            "        SetModule_StringFactory.create(builder.setModule);",
-            "    this.setOfStringProvider = ",
-            "        SetFactory.<String>builder(1, 1)",
-            "            .addCollectionProvider(emptySetProvider)",
-            "            .addProvider(stringProvider)",
-            "            .build();",
-            "  }",
-            "",
-            "  @Override",
-            "  public Set<String> strings() {",
-            "    return setOfStringProvider.get();",
-            "  }",
-            "",
-            "  public static final class Builder {",
-            "    private EmptySetModule emptySetModule;",
-            "    private SetModule setModule;",
-            "",
-            "    private Builder() {",
-            "    }",
-            "",
-            "    public TestComponent build() {",
-            "      if (emptySetModule == null) {",
-            "        this.emptySetModule = new EmptySetModule();",
-            "      }",
-            "      if (setModule == null) {",
-            "        this.setModule = new SetModule();",
-            "      }",
-            "      return new DaggerTestComponent(this);",
-            "    }",
-            "",
-            "    public Builder emptySetModule(EmptySetModule emptySetModule) {",
-            "      this.emptySetModule = Preconditions.checkNotNull(emptySetModule);",
-            "      return this;",
-            "    }",
-            "",
-            "    public Builder setModule(SetModule setModule) {",
-            "      this.setModule = Preconditions.checkNotNull(setModule);",
-            "      return this;",
-            "    }",
-            "  }",
-            "}");
-    Compilation compilation =
-        daggerCompiler().compile(emptySetModuleFile, setModuleFile, componentFile);
-    assertThat(compilation).succeeded();
-    assertThat(compilation)
-        .generatedSourceFile("test.DaggerTestComponent")
-        .hasSourceEquivalentTo(generatedComponent);
+    assertThat(
+            compilerWithOptions(compilerMode.javacopts())
+                .compile(aModule, aClass, bClass, component))
+        .succeeded();
   }
 
   @Test public void membersInjection() {
@@ -1329,62 +922,43 @@ public class ComponentProcessorTest {
         "  void inject(SomeInjectedType instance);",
         "  SomeInjectedType injectAndReturn(SomeInjectedType instance);",
         "}");
-    JavaFileObject generatedComponent = JavaFileObjects.forSourceLines(
-        "test.DaggerSimpleComponent",
-        "package test;",
-        "",
-        "import dagger.MembersInjector;",
-        "import javax.annotation.Generated;",
-        "",
-        GENERATED_ANNOTATION,
-        "public final class DaggerSimpleComponent implements SimpleComponent {",
-        "  private MembersInjector<SomeInjectedType> someInjectedTypeMembersInjector;",
-        "",
-        "  private DaggerSimpleComponent(Builder builder) {",
-        "    assert builder != null;",
-        "    initialize(builder);",
-        "  }",
-        "",
-        "  public static Builder builder() {",
-        "    return new Builder();",
-        "  }",
-        "",
-        "  public static SimpleComponent create() {",
-        "    return new Builder().build();",
-        "  }",
-        "",
-        "  @SuppressWarnings(\"unchecked\")",
-        "  private void initialize(final Builder builder) {",
-        "    this.someInjectedTypeMembersInjector =",
-        "        SomeInjectedType_MembersInjector.create(SomeInjectableType_Factory.create());",
-        "  }",
-        "",
-        "  @Override",
-        "  public void inject(SomeInjectedType instance) {",
-        "    someInjectedTypeMembersInjector.injectMembers(instance);",
-        "  }",
-        "",
-        "  @Override",
-        "  public SomeInjectedType injectAndReturn(SomeInjectedType instance) {",
-        "    someInjectedTypeMembersInjector.injectMembers(instance);",
-        "    return instance;",
-        "  }",
-        "",
-        "  public static final class Builder {",
-        "    private Builder() {",
-        "    }",
-        "",
-        "    public SimpleComponent build() {",
-        "      return new DaggerSimpleComponent(this);",
-        "    }",
-        "  }",
-        "}");
+
+    JavaFileObject generatedComponent =
+        compilerMode
+            .javaFileBuilder("test.DaggerSimpleComponent")
+            .addLines(
+                "package test;",
+                "",
+                "import com.google.errorprone.annotations.CanIgnoreReturnValue;",
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "final class DaggerSimpleComponent implements SimpleComponent {",
+                "  @Override",
+                "  public void inject(SomeInjectedType instance) {",
+                "    injectSomeInjectedType(instance);",
+                "  }",
+                "",
+                "  @Override",
+                "  public SomeInjectedType injectAndReturn(SomeInjectedType instance) {",
+                "    return injectSomeInjectedType(instance);",
+                "  }",
+                "",
+                "  @CanIgnoreReturnValue",
+                "  private SomeInjectedType injectSomeInjectedType(SomeInjectedType instance) {",
+                "    SomeInjectedType_MembersInjector.injectInjectedField(",
+                "        instance, new SomeInjectableType());",
+                "    return instance;",
+                "  }",
+                "}")
+            .build();
+
     Compilation compilation =
-        daggerCompiler().compile(injectableTypeFile, injectedTypeFile, componentFile);
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(injectableTypeFile, injectedTypeFile, componentFile);
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerSimpleComponent")
-        .hasSourceEquivalentTo(generatedComponent);
+        .containsElementsIn(generatedComponent);
   }
 
   @Test public void componentInjection() {
@@ -1406,60 +980,42 @@ public class ComponentProcessorTest {
         "@Component",
         "interface SimpleComponent {",
         "  SomeInjectableType someInjectableType();",
+        "  Provider<SimpleComponent> selfProvider();",
         "}");
     JavaFileObject generatedComponent =
         JavaFileObjects.forSourceLines(
             "test.DaggerSimpleComponent",
             "package test;",
             "",
-            "import dagger.internal.InstanceFactory;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
+            GeneratedLines.generatedAnnotations(),
+            "final class DaggerSimpleComponent implements SimpleComponent {",
+            "  private final DaggerSimpleComponent simpleComponent = this;",
             "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerSimpleComponent implements SimpleComponent {",
             "  private Provider<SimpleComponent> simpleComponentProvider;",
-            "  private Provider<SomeInjectableType> someInjectableTypeProvider;",
-            "",
-            "  private DaggerSimpleComponent(Builder builder) {",
-            "    assert builder != null;",
-            "    initialize(builder);",
-            "  }",
-            "",
-            "  public static Builder builder() {",
-            "    return new Builder();",
-            "  }",
-            "",
-            "  public static SimpleComponent create() {",
-            "    return new Builder().build();",
-            "  }",
             "",
             "  @SuppressWarnings(\"unchecked\")",
-            "  private void initialize(final Builder builder) {",
-            "    this.simpleComponentProvider = InstanceFactory.<SimpleComponent>create(this);",
-            "    this.someInjectableTypeProvider =",
-            "        SomeInjectableType_Factory.create(simpleComponentProvider);",
+            "  private void initialize() {",
+            "    this.simpleComponentProvider =",
+            "        InstanceFactory.create((SimpleComponent) simpleComponent);",
             "  }",
             "",
             "  @Override",
             "  public SomeInjectableType someInjectableType() {",
-            "    return new SomeInjectableType(simpleComponentProvider.get())",
+            "    return new SomeInjectableType(this)",
             "  }",
             "",
-            "  public static final class Builder {",
-            "    private Builder() {",
-            "    }",
-            "",
-            "    public SimpleComponent build() {",
-            "      return new DaggerSimpleComponent(this);",
-            "    }",
+            "  @Override",
+            "  public Provider<SimpleComponent> selfProvider() {",
+            "    return simpleComponentProvider;",
             "  }",
             "}");
-    Compilation compilation = daggerCompiler().compile(injectableTypeFile, componentFile);
+    Compilation compilation =
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(injectableTypeFile, componentFile);
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerSimpleComponent")
-        .hasSourceEquivalentTo(generatedComponent);
+        .containsElementsIn(generatedComponent);
   }
 
   @Test public void membersInjectionInsideProvision() {
@@ -1489,136 +1045,39 @@ public class ComponentProcessorTest {
         "interface SimpleComponent {",
         "  SomeInjectedType createAndInject();",
         "}");
-    JavaFileObject generatedComponent = JavaFileObjects.forSourceLines(
-        "test.DaggerSimpleComponent",
-        "package test;",
-        "",
-        "import dagger.MembersInjector;",
-        "import javax.annotation.Generated;",
-        "import javax.inject.Provider;",
-        "",
-        GENERATED_ANNOTATION,
-        "public final class DaggerSimpleComponent implements SimpleComponent {",
-        "  private MembersInjector<SomeInjectedType> someInjectedTypeMembersInjector;",
-        "  private Provider<SomeInjectedType> someInjectedTypeProvider;",
-        "",
-        "  private DaggerSimpleComponent(Builder builder) {",
-        "    assert builder != null;",
-        "    initialize(builder);",
-        "  }",
-        "",
-        "  public static Builder builder() {",
-        "    return new Builder();",
-        "  }",
-        "",
-        "  public static SimpleComponent create() {",
-        "    return new Builder().build();",
-        "  }",
-        "",
-        "  @SuppressWarnings(\"unchecked\")",
-        "  private void initialize(final Builder builder) {",
-        "    this.someInjectedTypeMembersInjector =",
-        "        SomeInjectedType_MembersInjector.create(SomeInjectableType_Factory.create());",
-        "    this.someInjectedTypeProvider =",
-        "        SomeInjectedType_Factory.create(someInjectedTypeMembersInjector);",
-        "  }",
-        "",
-        "  @Override",
-        "  public SomeInjectedType createAndInject() {",
-        "    return someInjectedTypeProvider.get();",
-        "  }",
-        "",
-        "  public static final class Builder {",
-        "    private Builder() {",
-        "    }",
-        "",
-        "    public SimpleComponent build() {",
-        "      return new DaggerSimpleComponent(this);",
-        "    }",
-        "  }",
-        "}");
-    Compilation compilation =
-        daggerCompiler().compile(injectableTypeFile, injectedTypeFile, componentFile);
-    assertThat(compilation).succeeded();
-    assertThat(compilation)
-        .generatedSourceFile("test.DaggerSimpleComponent")
-        .hasSourceEquivalentTo(generatedComponent);
-  }
 
-  @Test public void injectionWithGenericBaseClass() {
-    JavaFileObject genericType = JavaFileObjects.forSourceLines("test.AbstractGenericType",
-        "package test;",
-        "",
-        "abstract class AbstractGenericType<T> {",
-        "}");
-    JavaFileObject injectableTypeFile = JavaFileObjects.forSourceLines("test.SomeInjectableType",
-        "package test;",
-        "",
-        "import javax.inject.Inject;",
-        "",
-        "final class SomeInjectableType extends AbstractGenericType<String> {",
-        "  @Inject SomeInjectableType() {}",
-        "}");
-    JavaFileObject componentFile = JavaFileObjects.forSourceLines("test.SimpleComponent",
-        "package test;",
-        "",
-        "import dagger.Component;",
-        "",
-        "@Component",
-        "interface SimpleComponent {",
-        "  SomeInjectableType someInjectableType();",
-        "}");
-    JavaFileObject generatedComponent = JavaFileObjects.forSourceLines(
-        "test.DaggerSimpleComponent",
-        "package test;",
-        "",
-        "import dagger.internal.MembersInjectors;",
-        "import javax.annotation.Generated;",
-        "import javax.inject.Provider;",
-        "",
-        GENERATED_ANNOTATION,
-        "public final class DaggerSimpleComponent implements SimpleComponent {",
-        "  private Provider<SomeInjectableType> someInjectableTypeProvider;",
-        "",
-        "  private DaggerSimpleComponent(Builder builder) {",
-        "    assert builder != null;",
-        "    initialize(builder);",
-        "  }",
-        "",
-        "  public static Builder builder() {",
-        "    return new Builder();",
-        "  }",
-        "",
-        "  public static SimpleComponent create() {",
-        "    return new Builder().build();",
-        "  }",
-        "",
-        "  @SuppressWarnings(\"unchecked\")",
-        "  private void initialize(final Builder builder) {",
-        "    this.someInjectableTypeProvider =",
-        "        SomeInjectableType_Factory.create(MembersInjectors.<SomeInjectableType>noOp());",
-        "  }",
-        "",
-        "  @Override",
-        "  public SomeInjectableType someInjectableType() {",
-        "    return someInjectableTypeProvider.get();",
-        "  }",
-        "",
-        "  public static final class Builder {",
-        "    private Builder() {",
-        "    }",
-        "",
-        "    public SimpleComponent build() {",
-        "      return new DaggerSimpleComponent(this);",
-        "    }",
-        "  }",
-        "}");
+    JavaFileObject generatedComponent =
+        compilerMode
+            .javaFileBuilder("test.DaggerSimpleComponent")
+            .addLines(
+                "package test;",
+                "",
+                "import com.google.errorprone.annotations.CanIgnoreReturnValue;",
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "final class DaggerSimpleComponent implements SimpleComponent {",
+                "  @Override",
+                "  public SomeInjectedType createAndInject() {",
+                "    return injectSomeInjectedType(",
+                "        SomeInjectedType_Factory.newInstance());",
+                "  }",
+                "",
+                "  @CanIgnoreReturnValue",
+                "  private SomeInjectedType injectSomeInjectedType(SomeInjectedType instance) {",
+                "    SomeInjectedType_MembersInjector.injectInjectedField(",
+                "        instance, new SomeInjectableType());",
+                "    return instance;",
+                "  }",
+                "}")
+            .build();
+
     Compilation compilation =
-        daggerCompiler().compile(genericType, injectableTypeFile, componentFile);
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(injectableTypeFile, injectedTypeFile, componentFile);
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerSimpleComponent")
-        .hasSourceEquivalentTo(generatedComponent);
+        .containsElementsIn(generatedComponent);
   }
 
   @Test public void componentDependency() {
@@ -1634,16 +1093,15 @@ public class ComponentProcessorTest {
         "package test;",
         "",
         "import javax.inject.Inject;",
+        "import javax.inject.Provider;",
         "",
         "final class B {",
-        "  @Inject B(A a) {}",
+        "  @Inject B(Provider<A> a) {}",
         "}");
     JavaFileObject aComponentFile = JavaFileObjects.forSourceLines("test.AComponent",
         "package test;",
         "",
         "import dagger.Component;",
-        "import dagger.Lazy;",
-        "import javax.inject.Provider;",
         "",
         "@Component",
         "interface AComponent {",
@@ -1653,86 +1111,103 @@ public class ComponentProcessorTest {
         "package test;",
         "",
         "import dagger.Component;",
-        "import dagger.Lazy;",
-        "import javax.inject.Provider;",
         "",
         "@Component(dependencies = AComponent.class)",
         "interface BComponent {",
         "  B b();",
         "}");
     JavaFileObject generatedComponent =
-        JavaFileObjects.forSourceLines(
-            "test.DaggerBComponent",
-            "package test;",
-            "",
-            "import dagger.internal.Preconditions;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
-            "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerBComponent implements BComponent {",
-            "  private Provider<A> aProvider;",
-            "  private Provider<B> bProvider;",
-            "",
-            "  private DaggerBComponent(Builder builder) {",
-            "    assert builder != null;",
-            "    initialize(builder);",
-            "  }",
-            "",
-            "  public static Builder builder() {",
-            "    return new Builder();",
-            "  }",
-            "",
-            "  @SuppressWarnings(\"unchecked\")",
-            "  private void initialize(final Builder builder) {",
-            "    this.aProvider = new test_AComponent_a(builder.aComponent);",
-            "    this.bProvider = B_Factory.create(aProvider);",
-            "  }",
-            "",
-            "  @Override",
-            "  public B b() {",
-            "    return new B(aProvider.get());",
-            "  }",
-            "",
-            "  public static final class Builder {",
-            "    private AComponent aComponent;",
-            "",
-            "    private Builder() {",
-            "    }",
-            "",
-            "    public BComponent build() {",
-            "      if (aComponent == null) {",
-            "        throw new IllegalStateException(AComponent.class.getCanonicalName()",
-            "            + \" must be set\");",
-            "      }",
-            "      return new DaggerBComponent(this);",
-            "    }",
-            "",
-            "    public Builder aComponent(AComponent aComponent) {",
-            "      this.aComponent = Preconditions.checkNotNull(aComponent);",
-            "      return this;",
-            "    }",
-            "  }",
-            "",
-            "  private static class test_AComponent_a implements Provider<A> {",
-            "    private final AComponent aComponent;",
-            "    ",
-            "    test_AComponent_a(AComponent aComponent) {",
-            "        this.aComponent = aComponent;",
-            "    }",
-            "    ",
-            "    @Override()",
-            "    public A get() {",
-            "      return Preconditions.checkNotNull(aComponent.a(), " + NPE_LITERAL + ");",
-            "    }",
-            "  }",
-            "}");
+        compilerMode
+            .javaFileBuilder("test.DaggerBComponent")
+            .addLines(
+                "package test;",
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "final class DaggerBComponent implements BComponent {")
+            .addLinesIn(
+                FAST_INIT_MODE,
+                "  private final AComponent aComponent;",
+                "  private final DaggerBComponent bComponent = this;",
+                "  private Provider<A> aProvider;",
+                "",
+                "  private DaggerBComponent(AComponent aComponentParam) {",
+                "    this.aComponent = aComponentParam;",
+                "    initialize(aComponentParam);",
+                "  }",
+                "",
+                "  @SuppressWarnings(\"unchecked\")",
+                "  private void initialize(final AComponent aComponentParam) {",
+                "    this.aProvider = new SwitchingProvider<>(bComponent, 0);",
+                "  }")
+            .addLinesIn(
+                DEFAULT_MODE,
+                "  private Provider<A> aProvider;",
+                "",
+                "  private DaggerBComponent(AComponent aComponentParam) {",
+                "    initialize(aComponentParam);",
+                "  }",
+                "",
+                "  @SuppressWarnings(\"unchecked\")",
+                "  private void initialize(final AComponent aComponentParam) {",
+                "    this.aProvider = new test_AComponent_a(aComponentParam);",
+                "  }")
+            .addLines(
+                "  @Override",
+                "  public B b() {",
+                "    return new B(aProvider);",
+                "  }",
+                "",
+                "  static final class Builder {",
+                "    private AComponent aComponent;",
+                "",
+                "    public Builder aComponent(AComponent aComponent) {",
+                "      this.aComponent = Preconditions.checkNotNull(aComponent);",
+                "      return this;",
+                "    }",
+                "",
+                "    public BComponent build() {",
+                "      Preconditions.checkBuilderRequirement(aComponent, AComponent.class);",
+                "      return new DaggerBComponent(aComponent);",
+                "    }",
+                "  }")
+            .addLinesIn(
+                DEFAULT_MODE,
+                "  private static final class test_AComponent_a implements Provider<A> {",
+                "    private final AComponent aComponent;",
+                "    ",
+                "    test_AComponent_a(AComponent aComponent) {",
+                "        this.aComponent = aComponent;",
+                "    }",
+                "    ",
+                "    @Override()",
+                "    public A get() {",
+                "      return Preconditions.checkNotNullFromComponent(aComponent.a());",
+                "    }",
+                "  }",
+                "}")
+            .addLinesIn(
+                FAST_INIT_MODE,
+                "  private static final class SwitchingProvider<T> implements Provider<T> {",
+                "    @SuppressWarnings(\"unchecked\")",
+                "    @Override",
+                "    public T get() {",
+                "      switch (id) {",
+                "        case 0:",
+                "          return (T)",
+                "              Preconditions.checkNotNullFromComponent(bComponent.aComponent.a());",
+                "        default:",
+                "          throw new AssertionError(id);",
+                "      }",
+                "    }",
+                "  }")
+            .build();
     Compilation compilation =
-        daggerCompiler().compile(aFile, bFile, aComponentFile, bComponentFile);
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(aFile, bFile, aComponentFile, bComponentFile);
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerBComponent")
-        .hasSourceEquivalentTo(generatedComponent);
+        .containsElementsIn(generatedComponent);
   }
 
   @Test public void moduleNameCollision() {
@@ -1777,82 +1252,162 @@ public class ComponentProcessorTest {
         "  A a();",
         "  other.test.A otherA();",
         "}");
-    JavaFileObject generatedComponent = JavaFileObjects.forSourceLines(
-        "test.DaggerTestComponent",
-        "package test;",
-        "",
-        "import dagger.internal.Preconditions;",
-        "import javax.annotation.Generated;",
-        "import javax.inject.Provider;",
-        "",
-        GENERATED_ANNOTATION,
-        "public final class DaggerTestComponent implements TestComponent {",
-        "  private Provider<A> aProvider;",
-        "  private Provider<other.test.A> aProvider2;",
-        "",
-        "  private DaggerTestComponent(Builder builder) {",
-        "    assert builder != null;",
-        "    initialize(builder);",
-        "  }",
-        "",
-        "  public static Builder builder() {",
-        "    return new Builder();",
-        "  }",
-        "",
-        "  public static TestComponent create() {",
-        "    return new Builder().build();",
-        "  }",
-        "",
-        "  @SuppressWarnings(\"unchecked\")",
-        "  private void initialize(final Builder builder) {",
-        "    this.aProvider = TestModule_AFactory.create(builder.testModule);",
-        "    this.aProvider2 = other.test.TestModule_AFactory.create(builder.testModule2);",
-        "  }",
-        "",
-        "  @Override",
-        "  public A a() {",
-        "    return aProvider.get();",
-        "  }",
-        "",
-        "  @Override",
-        "  public other.test.A otherA() {",
-        "    return aProvider2.get();",
-        "  }",
-        "",
-        "  public static final class Builder {",
-        "    private TestModule testModule;",
-        "    private other.test.TestModule testModule2;",
-        "",
-        "    private Builder() {",
-        "    }",
-        "",
-        "    public TestComponent build() {",
-        "      if (testModule == null) {",
-        "        this.testModule = new TestModule();",
-        "      }",
-        "      if (testModule2 == null) {",
-        "        this.testModule2 = new other.test.TestModule();",
-        "      }",
-        "      return new DaggerTestComponent(this);",
-        "    }",
-        "",
-        "    public Builder testModule(TestModule testModule) {",
-        "      this.testModule = Preconditions.checkNotNull(testModule);",
-        "      return this;",
-        "    }",
-        "",
-        "    public Builder testModule(other.test.TestModule testModule) {",
-        "      this.testModule2 = Preconditions.checkNotNull(testModule);",
-        "      return this;",
-        "    }",
-        "  }",
-        "}");
+    JavaFileObject generatedComponent =
+        JavaFileObjects.forSourceLines(
+            "test.DaggerTestComponent",
+            "package test;",
+            "",
+            GeneratedLines.generatedAnnotations(),
+            "final class DaggerTestComponent implements TestComponent {",
+            "  private final TestModule testModule;",
+            "  private final other.test.TestModule testModule2;",
+            "",
+            "  private DaggerTestComponent(",
+            "      TestModule testModuleParam,",
+            "      other.test.TestModule testModuleParam2) {",
+            "    this.testModule = testModuleParam;",
+            "    this.testModule2 = testModuleParam2;",
+            "  }",
+            "",
+            "  @Override",
+            "  public A a() {",
+            "    return TestModule_AFactory.a(testModule);",
+            "  }",
+            "",
+            "  @Override",
+            "  public other.test.A otherA() {",
+            "    return other.test.TestModule_AFactory.a(testModule2);",
+            "  }",
+            "",
+            "  static final class Builder {",
+            "    private TestModule testModule;",
+            "    private other.test.TestModule testModule2;",
+            "",
+            "    public Builder testModule(TestModule testModule) {",
+            "      this.testModule = Preconditions.checkNotNull(testModule);",
+            "      return this;",
+            "    }",
+            "",
+            "    public Builder testModule(other.test.TestModule testModule) {",
+            "      this.testModule2 = Preconditions.checkNotNull(testModule);",
+            "      return this;",
+            "    }",
+            "",
+            "    public TestComponent build() {",
+            "      if (testModule == null) {",
+            "        this.testModule = new TestModule();",
+            "      }",
+            "      if (testModule2 == null) {",
+            "        this.testModule2 = new other.test.TestModule();",
+            "      }",
+            "      return new DaggerTestComponent(testModule, testModule2);",
+            "    }",
+            "  }",
+            "}");
     Compilation compilation =
-        daggerCompiler().compile(aFile, otherAFile, moduleFile, otherModuleFile, componentFile);
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(aFile, otherAFile, moduleFile, otherModuleFile, componentFile);
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerTestComponent")
-        .hasSourceEquivalentTo(generatedComponent);
+        .containsElementsIn(generatedComponent);
+  }
+
+  @Test public void ignoresDependencyMethodsFromObject() {
+    JavaFileObject injectedTypeFile =
+        JavaFileObjects.forSourceLines(
+            "test.InjectedType",
+            "package test;",
+            "",
+            "import javax.inject.Inject;",
+            "import javax.inject.Provider;",
+            "",
+            "final class InjectedType {",
+            "  @Inject InjectedType(",
+            "      String stringInjection,",
+            "      int intInjection,",
+            "      AComponent aComponent,",
+            "      Class<AComponent> aClass) {}",
+            "}");
+    JavaFileObject aComponentFile =
+        JavaFileObjects.forSourceLines(
+            "test.AComponent",
+            "package test;",
+            "",
+            "class AComponent {",
+            "  String someStringInjection() {",
+            "    return \"injectedString\";",
+            "  }",
+            "",
+            "  int someIntInjection() {",
+            "    return 123;",
+            "  }",
+            "",
+            "  Class<AComponent> someClassInjection() {",
+            "    return AComponent.class;",
+            "  }",
+            "",
+            "  @Override",
+            "  public String toString() {",
+            "    return null;",
+            "  }",
+            "",
+            "  @Override",
+            "  public int hashCode() {",
+            "    return 456;",
+            "  }",
+            "",
+            "  @Override",
+            "  public AComponent clone() {",
+            "    return null;",
+            "  }",
+            "}");
+    JavaFileObject bComponentFile =
+        JavaFileObjects.forSourceLines(
+            "test.AComponent",
+            "package test;",
+            "",
+            "import dagger.Component;",
+            "",
+            "@Component(dependencies = AComponent.class)",
+            "interface BComponent {",
+            "  InjectedType injectedType();",
+            "}");
+
+    JavaFileObject generatedComponent =
+        JavaFileObjects.forSourceLines(
+            "test.DaggerBComponent",
+            "package test;",
+            "",
+            GeneratedLines.generatedImports("import dagger.internal.Preconditions;"),
+            "",
+            GeneratedLines.generatedAnnotations(),
+            "final class DaggerBComponent implements BComponent {",
+            "  private final AComponent aComponent;",
+            "",
+            "  private DaggerBComponent(AComponent aComponentParam) {",
+            "    this.aComponent = aComponentParam;",
+            "  }",
+            "",
+            "  @Override",
+            "  public InjectedType injectedType() {",
+            "    return new InjectedType(",
+            "        Preconditions.checkNotNullFromComponent(",
+            "            aComponent.someStringInjection()),",
+            "        aComponent.someIntInjection(),",
+            "        aComponent,",
+            "        Preconditions.checkNotNullFromComponent(",
+            "            aComponent.someClassInjection()));",
+            "  }",
+            "}");
+
+    Compilation compilation =
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(injectedTypeFile, aComponentFile, bComponentFile);
+    assertThat(compilation).succeeded();
+    assertThat(compilation)
+        .generatedSourceFile("test.DaggerBComponent")
+        .containsElementsIn(generatedComponent);
   }
 
   @Test public void resolutionOrder() {
@@ -1901,69 +1456,43 @@ public class ComponentProcessorTest {
         "  C c();",
         "  X x();",
         "}");
+
     JavaFileObject generatedComponent =
-        JavaFileObjects.forSourceLines(
-            "test.DaggerTestComponent",
-            "package test;",
-            "",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
-            "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerTestComponent implements TestComponent {",
-            "  private Provider<B> bProvider;",
-            "  private Provider<A> aProvider;",
-            "  private Provider<X> xProvider;",
-            "",
-            "  private DaggerTestComponent(Builder builder) {",
-            "    assert builder != null;",
-            "    initialize(builder);",
-            "  }",
-            "",
-            "  public static Builder builder() {",
-            "    return new Builder();",
-            "  }",
-            "",
-            "  public static TestComponent create() {",
-            "    return new Builder().build();",
-            "  }",
-            "",
-            "  @SuppressWarnings(\"unchecked\")",
-            "  private void initialize(final Builder builder) {",
-            "    this.bProvider = B_Factory.create(C_Factory.create());",
-            "    this.aProvider = A_Factory.create(bProvider);",
-            "    this.xProvider = X_Factory.create(C_Factory.create());",
-            "  }",
-            "",
-            "  @Override",
-            "  public A a() {",
-            "    return new A(new B(new C()));",
-            "  }",
-            "",
-            "  @Override",
-            "  public C c() {",
-            "    return new C();",
-            "  }",
-            "",
-            "  @Override",
-            "  public X x() {",
-            "    return new X(new C());",
-            "  }",
-            "",
-            "  public static final class Builder {",
-            "    private Builder() {",
-            "    }",
-            "",
-            "    public TestComponent build() {",
-            "      return new DaggerTestComponent(this);",
-            "    }",
-            "  }",
-            "}");
-    Compilation compilation = daggerCompiler().compile(aFile, bFile, cFile, xFile, componentFile);
+        compilerMode
+            .javaFileBuilder("test.DaggerTestComponent")
+            .addLines(
+                "package test;",
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "final class DaggerTestComponent implements TestComponent {",
+                "  private B b() {",
+                "    return new B(new C());",
+                "  }",
+                "",
+                "  @Override",
+                "  public A a() {",
+                "    return new A(b());",
+                "  }",
+                "",
+                "  @Override",
+                "  public C c() {",
+                "    return new C();",
+                "  }",
+                "",
+                "  @Override",
+                "  public X x() {",
+                "    return new X(new C());",
+                "  }",
+                "}")
+            .build();
+
+    Compilation compilation =
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(aFile, bFile, cFile, xFile, componentFile);
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerTestComponent")
-        .hasSourceEquivalentTo(generatedComponent);
+        .containsElementsIn(generatedComponent);
   }
 
   @Test public void simpleComponent_redundantComponentMethod() {
@@ -2012,13 +1541,13 @@ public class ComponentProcessorTest {
             "test.DaggerSimpleComponent",
             "package test;",
             "",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports(),
             "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerSimpleComponent implements SimpleComponent {",
-            "  private DaggerSimpleComponent(Builder builder) {",
-            "    assert builder != null;",
-            "  }",
+            GeneratedLines.generatedAnnotations(),
+            "final class DaggerSimpleComponent implements SimpleComponent {",
+            "  private final DaggerSimpleComponent simpleComponent = this;",
+            "",
+            "  private DaggerSimpleComponent() {}",
             "",
             "  public static Builder builder() {",
             "    return new Builder();",
@@ -2033,17 +1562,16 @@ public class ComponentProcessorTest {
             "    return new SomeInjectableType();",
             "  }",
             "",
-            "  public static final class Builder {",
-            "    private Builder() {",
-            "    }",
+            "  static final class Builder {",
+            "    private Builder() {}",
             "",
             "    public SimpleComponent build() {",
-            "      return new DaggerSimpleComponent(this);",
+            "      return new DaggerSimpleComponent();",
             "    }",
             "  }",
             "}");
     Compilation compilation =
-        daggerCompiler()
+        compilerWithOptions(compilerMode.javacopts())
             .compile(
                 injectableTypeFile,
                 componentSupertypeAFile,
@@ -2068,8 +1596,6 @@ public class ComponentProcessorTest {
         "package test;",
         "",
         "import dagger.Component;",
-        "import dagger.Lazy;",
-        "import javax.inject.Provider;",
         "",
         "@Component",
         "interface Supertype {",
@@ -2079,65 +1605,29 @@ public class ComponentProcessorTest {
         "package test;",
         "",
         "import dagger.Component;",
-        "import dagger.Lazy;",
-        "import javax.inject.Provider;",
         "",
         "@Component",
         "interface SimpleComponent extends Supertype {",
-        "}");
-    JavaFileObject componentFile = JavaFileObjects.forSourceLines("test.ComponentWithDep",
-        "package test;",
-        "",
-        "import dagger.Component;",
-        "import dagger.Lazy;",
-        "import javax.inject.Provider;",
-        "",
-        "@Component(dependencies = SimpleComponent.class)",
-        "interface ComponentWithDep {",
-        "  SomeInjectableType someInjectableType();",
         "}");
     JavaFileObject generatedComponent =
         JavaFileObjects.forSourceLines(
             "test.DaggerSimpleComponent",
             "package test;",
             "",
-            "import javax.annotation.Generated;",
-            "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerSimpleComponent implements SimpleComponent {",
-            "  private DaggerSimpleComponent(Builder builder) {",
-            "    assert builder != null;",
-            "  }",
-            "",
-            "  public static Builder builder() {",
-            "    return new Builder();",
-            "  }",
-            "",
-            "  public static SimpleComponent create() {",
-            "    return new Builder().build();",
-            "  }",
-            "",
+            GeneratedLines.generatedAnnotations(),
+            "final class DaggerSimpleComponent implements SimpleComponent {",
             "  @Override",
             "  public SomeInjectableType someInjectableType() {",
             "    return new SomeInjectableType();",
             "  }",
-            "",
-            "  public static final class Builder {",
-            "    private Builder() {",
-            "    }",
-            "",
-            "    public SimpleComponent build() {",
-            "      return new DaggerSimpleComponent(this);",
-            "    }",
-            "  }",
             "}");
     Compilation compilation =
-        daggerCompiler()
-            .compile(injectableTypeFile, componentSupertype, depComponentFile, componentFile);
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(injectableTypeFile, componentSupertype, depComponentFile);
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerSimpleComponent")
-        .hasSourceEquivalentTo(generatedComponent);
+        .containsElementsIn(generatedComponent);
   }
 
   @Test public void wildcardGenericsRequiresAtProvides() {
@@ -2178,7 +1668,9 @@ public class ComponentProcessorTest {
         "interface SimpleComponent {",
         "  C c();",
         "}");
-    Compilation compilation = daggerCompiler().compile(aFile, bFile, cFile, componentFile);
+    Compilation compilation =
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(aFile, bFile, cFile, componentFile);
     assertThat(compilation).failed();
     assertThat(compilation)
         .hadErrorContaining(
@@ -2199,7 +1691,8 @@ public class ComponentProcessorTest {
             "interface TestComponent {",
             "  String[] array();",
             "}");
-    Compilation compilation = daggerCompiler().compile(component);
+    Compilation compilation =
+        compilerWithOptions(compilerMode.javacopts()).compile(component);
     assertThat(compilation).failed();
     assertThat(compilation)
         .hadErrorContaining("String[] cannot be provided without an @Provides-annotated method");
@@ -2235,6 +1728,7 @@ public class ComponentProcessorTest {
                     "final class GeneratedType {",
                     "  @Inject GeneratedType() {}",
                     "}"))
+            .withOptions(compilerMode.javacopts())
             .compile(injectableTypeFile, componentFile);
     assertThat(compilation).succeeded();
     assertThat(compilation).generatedSourceFile("test.DaggerSimpleComponent");
@@ -2270,104 +1764,11 @@ public class ComponentProcessorTest {
                     "final class GeneratedType {",
                     "  @Inject GeneratedType() {}",
                     "}"))
+            .withOptions(compilerMode.javacopts())
             .compile(componentFile, interfaceFile);
     assertThat(compilation).succeeded();
     assertThat(compilation).generatedSourceFile("test.DaggerSimpleComponent");
   }
-
-  @Test
-  @Ignore // modify this test as necessary while debugging for your situation.
-  @SuppressWarnings("unused")
-  public void genericTestToLetMeDebugInEclipse() {
-    JavaFileObject aFile = JavaFileObjects.forSourceLines("test.A",
-        "package test;",
-        "",
-         "import javax.inject.Inject;",
-         "",
-         "public final class A {",
-         "  @Inject A() {}",
-         "}");
-     JavaFileObject bFile = JavaFileObjects.forSourceLines("test.B",
-         "package test;",
-         "",
-         "import javax.inject.Inject;",
-         "import javax.inject.Provider;",
-         "",
-         "public class B<T> {",
-         "  @Inject B() {}",
-         "}");
-     JavaFileObject dFile = JavaFileObjects.forSourceLines("test.sub.D",
-         "package test.sub;",
-         "",
-         "import javax.inject.Inject;",
-         "import javax.inject.Provider;",
-         "import test.B;",
-         "",
-         "public class D {",
-         "  @Inject D(B<A.InA> ba) {}",
-         "}");
-     JavaFileObject componentFile = JavaFileObjects.forSourceLines("test.SimpleComponent",
-         "package test;",
-         "",
-         "import dagger.Component;",
-         "import dagger.Lazy;",
-         "",
-         "import javax.inject.Provider;",
-         "",
-         "@Component",
-         "interface SimpleComponent {",
-         "  B<A> d();",
-         "  Provider<B<A>> d2();",
-         "}");
-     JavaFileObject generatedComponent = JavaFileObjects.forSourceLines(
-         "test.DaggerSimpleComponent",
-         "package test;",
-         "",
-         "import javax.annotation.Generated;",
-         "import javax.inject.Provider;",
-         "",
-         GENERATED_ANNOTATION,
-         "public final class DaggerSimpleComponent implements SimpleComponent {",
-         "  private Provider<D> dProvider;",
-         "",
-         "  private DaggerSimpleComponent(Builder builder) {",
-         "    assert builder != null;",
-         "    initialize(builder);",
-         "  }",
-         "",
-         "  public static Builder builder() {",
-         "    return new Builder();",
-         "  }",
-         "",
-         "  public static SimpleComponent create() {",
-         "    return new Builder().build();",
-         "  }",
-         "",
-         "  @SuppressWarnings(\"unchecked\")",
-         "  private void initialize(final Builder builder) {",
-         "    this.dProvider = new D_Factory(B_Factory.INSTANCE);",
-         "  }",
-         "",
-         "  @Override",
-         "  public D d() {",
-         "    return dProvider.get();",
-         "  }",
-         "",
-         "  public static final class Builder {",
-         "    private Builder() {",
-         "    }",
-         "",
-         "    public SimpleComponent build() {",
-         "      return new DaggerSimpleComponent(this);",
-         "    }",
-         "  }",
-         "}");
-    Compilation compilation = daggerCompiler().compile(aFile, bFile, componentFile);
-    assertThat(compilation).succeeded();
-    assertThat(compilation)
-        .generatedSourceFile("test.DaggerSimpleComponent")
-        .hasSourceEquivalentTo(generatedComponent);
-   }
 
   /**
    * We warn when generating a {@link MembersInjector} for a type post-hoc (i.e., if Dagger wasn't
@@ -2382,8 +1783,11 @@ public class ComponentProcessorTest {
     Compilation compilation =
         javac()
             .withOptions(
-                "-Xlint:-processing",
-                 "-Adagger.warnIfInjectionFactoryNotGeneratedUpstream=enabled")
+                compilerMode
+                    .javacopts()
+                    .append(
+                        "-Xlint:-processing",
+                        "-Adagger.warnIfInjectionFactoryNotGeneratedUpstream=enabled"))
             .withProcessors(
                 new ElementFilteringComponentProcessor(
                     Predicates.not(
@@ -2513,34 +1917,13 @@ public class ComponentProcessorTest {
             "final class AClass {",
             "  @Inject @AScope AClass() {}",
             "}");
-    Compilation compilation = daggerCompiler().compile(aScope, aClass);
+    Compilation compilation =
+        compilerWithOptions(compilerMode.javacopts()).compile(aScope, aClass);
     assertThat(compilation).failed();
     assertThat(compilation)
-        .hadErrorContaining("@Scope annotations are not allowed on @Inject constructors.")
+        .hadErrorContaining("@Scope annotations are not allowed on @Inject constructors")
         .inFile(aClass)
         .onLine(6);
-  }
-
-  @Test
-  public void attemptToInjectWildcardGenerics() {
-    JavaFileObject testComponent =
-        JavaFileObjects.forSourceLines(
-            "test.TestComponent",
-            "package test;",
-            "",
-            "import dagger.Component;",
-            "import dagger.Lazy;",
-            "import javax.inject.Provider;",
-            "",
-            "@Component",
-            "interface TestComponent {",
-            "  Lazy<? extends Number> wildcardNumberLazy();",
-            "  Provider<? super Number> wildcardNumberProvider();",
-            "}");
-    Compilation compilation = daggerCompiler().compile(testComponent);
-    assertThat(compilation).failed();
-    assertThat(compilation).hadErrorContaining("wildcard type").inFile(testComponent).onLine(9);
-    assertThat(compilation).hadErrorContaining("wildcard type").inFile(testComponent).onLine(10);
   }
 
   @Test
@@ -2601,14 +1984,13 @@ public class ComponentProcessorTest {
             "test.DaggerParent",
             "package test;",
             "",
-            "import dagger.internal.Preconditions;",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports("import dagger.internal.Preconditions;"),
             "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerParent implements Parent {",
-            "  private DaggerParent(Builder builder) {",
-            "    assert builder != null;",
-            "  }",
+            GeneratedLines.generatedAnnotations(),
+            "final class DaggerParent implements Parent {",
+            "  private final DaggerParent parent = this;",
+            "",
+            "  private DaggerParent() {}",
             "",
             "  public static Builder builder() {",
             "    return new Builder();",
@@ -2618,65 +2000,420 @@ public class ComponentProcessorTest {
             "    return new Builder().build();",
             "  }",
             "",
-            "  public static final class Builder {",
+            "  static final class Builder {",
             "    private Builder() {}",
-            "",
-            "    public Parent build() {",
-            "      return new DaggerParent(this);",
-            "    }",
             "",
             "    @Deprecated",
             "    public Builder testModule(TestModule testModule) {",
             "      Preconditions.checkNotNull(testModule);",
             "      return this;",
             "    }",
+            "",
+            "    public Parent build() {",
+            "      return new DaggerParent();",
+            "    }",
             "  }",
             "}");
 
-    Compilation compilation = daggerCompiler().compile(foo, module, component, prunedSubcomponent);
+    Compilation compilation =
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(foo, module, component, prunedSubcomponent);
     assertThat(compilation).succeeded();
     assertThat(compilation)
         .generatedSourceFile("test.DaggerParent")
         .hasSourceEquivalentTo(generated);
   }
 
-  // TODO(b/34107586): Fix and enable test.
   @Test
-  @Ignore
-  public void invalidComponentDependencies() {
-    JavaFileObject testComponent =
+  public void bindsToDuplicateBinding_bindsKeyIsNotDuplicated() {
+    JavaFileObject firstModule =
+        JavaFileObjects.forSourceLines(
+            "test.FirstModule",
+            "package test;",
+            "",
+            "import dagger.Module;",
+            "import dagger.Provides;",
+            "",
+            "@Module",
+            "abstract class FirstModule {",
+            "  @Provides static String first() { return \"first\"; }",
+            "}");
+    JavaFileObject secondModule =
+        JavaFileObjects.forSourceLines(
+            "test.SecondModule",
+            "package test;",
+            "",
+            "import dagger.Module;",
+            "import dagger.Provides;",
+            "",
+            "@Module",
+            "abstract class SecondModule {",
+            "  @Provides static String second() { return \"second\"; }",
+            "}");
+    JavaFileObject bindsModule =
+        JavaFileObjects.forSourceLines(
+            "test.BindsModule",
+            "package test;",
+            "",
+            "import dagger.Binds;",
+            "import dagger.Module;",
+            "",
+            "@Module",
+            "abstract class BindsModule {",
+            "  @Binds abstract Object bindToDuplicateBinding(String duplicate);",
+            "}");
+    JavaFileObject component =
         JavaFileObjects.forSourceLines(
             "test.TestComponent",
             "package test;",
             "",
             "import dagger.Component;",
             "",
-            "@Component(dependencies = int.class)",
-            "interface TestComponent {}");
-    Compilation compilation = daggerCompiler().compile(testComponent);
+            "@Component(modules = {FirstModule.class, SecondModule.class, BindsModule.class})",
+            "interface TestComponent {",
+            "  Object notDuplicated();",
+            "}");
+
+    Compilation compilation =
+        daggerCompiler().compile(firstModule, secondModule, bindsModule, component);
     assertThat(compilation).failed();
-    assertThat(compilation).hadErrorContaining("int is not a valid component dependency type");
+    assertThat(compilation).hadErrorCount(1);
+    assertThat(compilation)
+        .hadErrorContaining("String is bound multiple times")
+        .inFile(component)
+        .onLineContaining("interface TestComponent");
   }
 
   @Test
-  public void invalidComponentModules() {
-    JavaFileObject testComponent =
+  public void nullIncorrectlyReturnedFromNonNullableInlinedProvider() {
+    Compilation compilation =
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(
+                JavaFileObjects.forSourceLines(
+                    "test.TestModule",
+                    "package test;",
+                    "",
+                    "import dagger.Module;",
+                    "import dagger.Provides;",
+                    "",
+                    "@Module",
+                    "public abstract class TestModule {",
+                    "  @Provides static String nonNullableString() { return \"string\"; }",
+                    "}"),
+                JavaFileObjects.forSourceLines(
+                    "test.InjectsMember",
+                    "package test;",
+                    "",
+                    "import javax.inject.Inject;",
+                    "",
+                    "public class InjectsMember {",
+                    "  @Inject String member;",
+                    "}"),
+                JavaFileObjects.forSourceLines(
+                    "test.TestComponent",
+                    "package test;",
+                    "",
+                    "import dagger.Component;",
+                    "",
+                    "@Component(modules = TestModule.class)",
+                    "interface TestComponent {",
+                    "  String nonNullableString();",
+                    "  void inject(InjectsMember member);",
+                    "}"));
+    assertThat(compilation).succeededWithoutWarnings();
+    assertThat(compilation)
+        .generatedSourceFile("test.TestModule_NonNullableStringFactory")
+        .containsElementsIn(
+            JavaFileObjects.forSourceLines(
+                "test.TestModule_NonNullableStringFactory",
+                "package test;",
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "public final class TestModule_NonNullableStringFactory",
+                "    implements Factory<String> {",
+                "  @Override",
+                "  public String get() {",
+                "    return nonNullableString();",
+                "  }",
+                "",
+                "  public static String nonNullableString() {",
+                "    return Preconditions.checkNotNullFromProvides(",
+                "        TestModule.nonNullableString());",
+                "  }",
+                "}"));
+
+    JavaFileObject generatedComponent =
+        compilerMode
+            .javaFileBuilder("test.DaggerTestComponent")
+            .addLines(
+                "package test;",
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "final class DaggerTestComponent implements TestComponent {",
+                "  @Override",
+                "  public String nonNullableString() {",
+                "    return TestModule_NonNullableStringFactory.nonNullableString());",
+                "  }",
+                "",
+                "  @Override",
+                "  public void inject(InjectsMember member) {",
+                "    injectInjectsMember(member);",
+                "  }",
+                "",
+                "  @CanIgnoreReturnValue",
+                "  private InjectsMember injectInjectsMember(InjectsMember instance) {",
+                "    InjectsMember_MembersInjector.injectMember(instance,",
+                "        TestModule_NonNullableStringFactory.nonNullableString());",
+                "    return instance;",
+                "  }",
+                "}")
+            .build();
+
+    assertThat(compilation)
+        .generatedSourceFile("test.DaggerTestComponent")
+        .containsElementsIn(generatedComponent);
+  }
+
+  @Test
+  public void nullCheckingIgnoredWhenProviderReturnsPrimitive() {
+    Compilation compilation =
+        compilerWithOptions(compilerMode.javacopts())
+            .compile(
+                JavaFileObjects.forSourceLines(
+                    "test.TestModule",
+                    "package test;",
+                    "",
+                    "import dagger.Module;",
+                    "import dagger.Provides;",
+                    "",
+                    "@Module",
+                    "public abstract class TestModule {",
+                    "  @Provides static int primitiveInteger() { return 1; }",
+                    "}"),
+                JavaFileObjects.forSourceLines(
+                    "test.InjectsMember",
+                    "package test;",
+                    "",
+                    "import javax.inject.Inject;",
+                    "",
+                    "public class InjectsMember {",
+                    "  @Inject Integer member;",
+                    "}"),
+                JavaFileObjects.forSourceLines(
+                    "test.TestComponent",
+                    "package test;",
+                    "",
+                    "import dagger.Component;",
+                    "",
+                    "@Component(modules = TestModule.class)",
+                    "interface TestComponent {",
+                    "  Integer nonNullableInteger();",
+                    "  void inject(InjectsMember member);",
+                    "}"));
+    assertThat(compilation).succeededWithoutWarnings();
+    assertThat(compilation)
+        .generatedSourceFile("test.TestModule_PrimitiveIntegerFactory")
+        .containsElementsIn(
+            JavaFileObjects.forSourceLines(
+                "test.TestModule_PrimitiveIntegerFactory",
+                "package test;",
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "public final class TestModule_PrimitiveIntegerFactory",
+                "    implements Factory<Integer> {",
+                "",
+                "  @Override",
+                "  public Integer get() {",
+                "    return primitiveInteger();",
+                "  }",
+                "",
+                "  public static int primitiveInteger() {",
+                "    return TestModule.primitiveInteger();",
+                "  }",
+                "}"));
+
+    JavaFileObject generatedComponent =
+        compilerMode
+            .javaFileBuilder("test.DaggerTestComponent")
+            .addLines(
+                "package test;",
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "final class DaggerTestComponent implements TestComponent {",
+                "  @Override",
+                "  public Integer nonNullableInteger() {",
+                "    return TestModule.primitiveInteger();",
+                "  }",
+                "",
+                "  @Override",
+                "  public void inject(InjectsMember member) {",
+                "    injectInjectsMember(member);",
+                "  }",
+                "",
+                "  @CanIgnoreReturnValue",
+                "  private InjectsMember injectInjectsMember(InjectsMember instance) {",
+                "    InjectsMember_MembersInjector.injectMember(",
+                "        instance, TestModule.primitiveInteger());",
+                "    return instance;",
+                "  }",
+                "}")
+            .build();
+
+    assertThat(compilation)
+        .generatedSourceFile("test.DaggerTestComponent")
+        .containsElementsIn(generatedComponent);
+  }
+
+  @Test
+  public void privateMethodUsedOnlyInChildDoesNotUseQualifiedThis() {
+    JavaFileObject parent =
         JavaFileObjects.forSourceLines(
-            "test.TestComponent",
+            "test.Parent",
             "package test;",
             "",
             "import dagger.Component;",
+            "import javax.inject.Singleton;",
             "",
-            "@Component(modules = int.class)",
-            "interface TestComponent {}");
-    Compilation compilation = daggerCompiler().compile(testComponent);
-    assertThat(compilation).failed();
-    assertThat(compilation).hadErrorContaining("int is not a valid module type");
-  }
-
-  @Test
-  public void moduleInDependencies() {
+            "@Singleton",
+            "@Component(modules=TestModule.class)",
+            "interface Parent {",
+            "  Child child();",
+            "}");
     JavaFileObject testModule =
+        JavaFileObjects.forSourceLines(
+            "test.TestModule",
+            "package test;",
+            "",
+            "import dagger.Module;",
+            "import dagger.Provides;",
+            "import javax.inject.Singleton;",
+            "",
+            "@Module",
+            "abstract class TestModule {",
+            "  @Provides @Singleton static Number number() {",
+            "    return 3;",
+            "  }",
+            "",
+            "  @Provides static String string(Number number) {",
+            "    return number.toString();",
+            "  }",
+            "}");
+    JavaFileObject child =
+        JavaFileObjects.forSourceLines(
+            "test.Child",
+            "package test;",
+            "",
+            "import dagger.Subcomponent;",
+            "",
+            "@Subcomponent",
+            "interface Child {",
+            "  String string();",
+            "}");
+
+    JavaFileObject expectedPattern =
+        JavaFileObjects.forSourceLines(
+            "test.DaggerParent",
+            "package test;",
+            GeneratedLines.generatedAnnotations(),
+            "final class DaggerParent implements Parent {",
+            "  private String string() {",
+            "    return TestModule_StringFactory.string(numberProvider.get());",
+            "  }",
+            "}");
+
+    Compilation compilation = daggerCompiler().compile(parent, testModule, child);
+    assertThat(compilation).succeededWithoutWarnings();
+    assertThat(compilation)
+        .generatedSourceFile("test.DaggerParent")
+        .containsElementsIn(expectedPattern);
+  }
+
+  @Test
+  public void componentMethodInChildCallsComponentMethodInParent() {
+    JavaFileObject supertype =
+        JavaFileObjects.forSourceLines(
+            "test.Supertype",
+            "package test;",
+            "",
+            "interface Supertype {",
+            "  String string();",
+            "}");
+    JavaFileObject parent =
+        JavaFileObjects.forSourceLines(
+            "test.Parent",
+            "package test;",
+            "",
+            "import dagger.Component;",
+            "import javax.inject.Singleton;",
+            "",
+            "@Singleton",
+            "@Component(modules=TestModule.class)",
+            "interface Parent extends Supertype {",
+            "  Child child();",
+            "}");
+    JavaFileObject testModule =
+        JavaFileObjects.forSourceLines(
+            "test.TestModule",
+            "package test;",
+            "",
+            "import dagger.Module;",
+            "import dagger.Provides;",
+            "import javax.inject.Singleton;",
+            "",
+            "@Module",
+            "abstract class TestModule {",
+            "  @Provides @Singleton static Number number() {",
+            "    return 3;",
+            "  }",
+            "",
+            "  @Provides static String string(Number number) {",
+            "    return number.toString();",
+            "  }",
+            "}");
+    JavaFileObject child =
+        JavaFileObjects.forSourceLines(
+            "test.Child",
+            "package test;",
+            "",
+            "import dagger.Subcomponent;",
+            "",
+            "@Subcomponent",
+            "interface Child extends Supertype {}");
+
+    JavaFileObject expectedPattern =
+        JavaFileObjects.forSourceLines(
+            "test.DaggerParent",
+            "package test;",
+            GeneratedLines.generatedAnnotations(),
+            "final class DaggerParent implements Parent {",
+            "  private static final class ChildImpl implements Child {",
+            "    @Override",
+            "    public String string() {",
+            "      return parent.string();",
+            "    }",
+            "  }",
+            "}");
+
+    Compilation compilation = daggerCompiler().compile(supertype, parent, testModule, child);
+    assertThat(compilation).succeededWithoutWarnings();
+    assertThat(compilation)
+        .generatedSourceFile("test.DaggerParent")
+        .containsElementsIn(expectedPattern);
+  }
+
+  @Test
+  public void justInTimeAtInjectConstructor_hasGeneratedQualifier() {
+    JavaFileObject injected =
+        JavaFileObjects.forSourceLines(
+            "test.Injected",
+            "package test;",
+            "",
+            "import javax.inject.Inject;",
+            "",
+            "class Injected {",
+            "  @Inject Injected(@GeneratedQualifier String string) {}",
+            "}");
+    JavaFileObject module =
         JavaFileObjects.forSourceLines(
             "test.TestModule",
             "package test;",
@@ -2685,160 +2422,184 @@ public class ComponentProcessorTest {
             "import dagger.Provides;",
             "",
             "@Module",
-            "final class TestModule {",
-            "  @Provides String s() { return null; }",
+            "interface TestModule {",
+            "  @Provides",
+            "  static String unqualified() {",
+            "    return new String();",
+            "  }",
+            "",
+            "  @Provides",
+            "  @GeneratedQualifier",
+            "  static String qualified() {",
+            "    return new String();",
+            "  }",
             "}");
-    JavaFileObject testComponent =
+    JavaFileObject component =
         JavaFileObjects.forSourceLines(
             "test.TestComponent",
             "package test;",
             "",
             "import dagger.Component;",
             "",
-            "@Component(dependencies = TestModule.class)",
-            "interface TestComponent {}");
-    Compilation compilation = daggerCompiler().compile(testModule, testComponent);
-    assertThat(compilation).failed();
+            "@Component(modules = TestModule.class)",
+            "interface TestComponent {",
+            "  Injected injected();",
+            "}");
+
+    JavaFileObject generatedComponent =
+        JavaFileObjects.forSourceLines(
+            "test.DaggerTestComponent",
+            "package test;",
+            "",
+            GeneratedLines.generatedAnnotations(),
+            "final class DaggerTestComponent implements TestComponent {",
+            "  @Override",
+            "  public Injected injected() {",
+            // Ensure that the qualified @Provides method is used. It's also probably more likely
+            // that if the qualifier type hasn't been generated, a duplicate binding error will be
+            // reported, since the annotation won't be recognized as a qualifier and instead as an
+            // ordinary annotation.
+            "    return new Injected(TestModule_QualifiedFactory.qualified());",
+            "  }",
+            "}");
+
+    Compilation compilation =
+        daggerCompiler(
+                new GeneratingProcessor(
+                    "test.GeneratedQualifier",
+                    "package test;",
+                    "",
+                    "import static java.lang.annotation.RetentionPolicy.RUNTIME;",
+                    "",
+                    "import java.lang.annotation.Retention;",
+                    "import javax.inject.Qualifier;",
+                    "",
+                    "@Retention(RUNTIME)",
+                    "@Qualifier",
+                    "@interface GeneratedQualifier {}"))
+            .compile(injected, module, component);
+    assertThat(compilation).succeededWithoutWarnings();
     assertThat(compilation)
-        .hadErrorContaining("test.TestModule is a module, which cannot be a component dependency");
+        .generatedSourceFile("test.DaggerTestComponent")
+        .containsElementsIn(generatedComponent);
   }
 
   @Test
-  public void bindsInstanceInModule() {
-    JavaFileObject testModule =
+  public void moduleHasGeneratedQualifier() {
+    JavaFileObject module =
         JavaFileObjects.forSourceLines(
             "test.TestModule",
             "package test;",
             "",
-            "import dagger.BindsInstance;",
             "import dagger.Module;",
+            "import dagger.Provides;",
             "",
             "@Module",
-            "abstract class TestModule {",
-            "  @BindsInstance abstract void str(String string);",
+            "interface TestModule {",
+            "  @Provides",
+            "  static String unqualified() {",
+            "    return new String();",
+            "  }",
+            "",
+            "  @Provides",
+            "  @GeneratedQualifier",
+            "  static String qualified() {",
+            "    return new String();",
+            "  }",
             "}");
-    Compilation compilation = daggerCompiler().compile(testModule);
-    assertThat(compilation).failed();
-    assertThat(compilation)
-        .hadErrorContaining(
-            "@BindsInstance methods should not be included in @Modules. Did you mean @Binds");
-  }
-
-  @Test
-  public void bindsInstanceInComponent() {
-    JavaFileObject testComponent =
+    JavaFileObject component =
         JavaFileObjects.forSourceLines(
             "test.TestComponent",
             "package test;",
             "",
-            "import dagger.BindsInstance;",
+            "import dagger.Component;",
+            "",
+            "@Component(modules = TestModule.class)",
+            "interface TestComponent {",
+            "  String unqualified();",
+            "}");
+
+    JavaFileObject generatedComponent =
+        JavaFileObjects.forSourceLines(
+            "test.DaggerTestComponent",
+            "package test;",
+            "",
+            GeneratedLines.generatedAnnotations(),
+            "final class DaggerTestComponent implements TestComponent {",
+            "  @Override",
+            "  public String unqualified() {",
+            // Ensure that the unqualified @Provides method is used. It's also probably more likely
+            // if the qualifier hasn't been generated, a duplicate binding exception will be thrown
+            // since the annotation won't be considered a qualifier
+            "    return TestModule_UnqualifiedFactory.unqualified();",
+            "  }",
+            "}");
+
+    Compilation compilation =
+        daggerCompiler(
+            new GeneratingProcessor(
+                "test.GeneratedQualifier",
+                "package test;",
+                "",
+                "import static java.lang.annotation.RetentionPolicy.RUNTIME;",
+                "",
+                "import java.lang.annotation.Retention;",
+                "import javax.inject.Qualifier;",
+                "",
+                "@Retention(RUNTIME)",
+                "@Qualifier",
+                "@interface GeneratedQualifier {}"))
+            .compile(module, component);
+    assertThat(compilation).succeededWithoutWarnings();
+    assertThat(compilation)
+        .generatedSourceFile("test.DaggerTestComponent")
+        .containsElementsIn(generatedComponent);
+  }
+
+  @Test
+  public void publicComponentType() {
+    JavaFileObject publicComponent =
+        JavaFileObjects.forSourceLines(
+            "test.PublicComponent",
+            "package test;",
+            "",
             "import dagger.Component;",
             "",
             "@Component",
-            "interface TestComponent {",
-            "  @BindsInstance String s(String s);",
-            "}");
-    Compilation compilation = daggerCompiler().compile(testComponent);
-    assertThat(compilation).failed();
+            "public interface PublicComponent {}");
+    Compilation compilation = daggerCompiler().compile(publicComponent);
+    assertThat(compilation).succeeded();
     assertThat(compilation)
-        .hadErrorContaining(
-            "@BindsInstance methods should not be included in @Components. "
-                + "Did you mean to put it in a @Component.Builder?");
-  }
-
-  @Test
-  public void bindsInstanceNotAbstract() {
-    JavaFileObject notAbstract =
-        JavaFileObjects.forSourceLines(
-            "test.BindsInstanceNotAbstract",
-            "package test;",
-            "",
-            "import dagger.BindsInstance;",
-            "import dagger.Component;",
-            "",
-            "class BindsInstanceNotAbstract {",
-            "  @BindsInstance BindsInstanceNotAbstract bind(int unused) { return this; }",
-            "}");
-    Compilation compilation = daggerCompiler().compile(notAbstract);
-    assertThat(compilation).failed();
-    assertThat(compilation)
-        .hadErrorContaining("@BindsInstance methods must be abstract")
-        .inFile(notAbstract)
-        .onLine(7);
-  }
-
-  @Test
-  public void bindsInstanceNoParameters() {
-    JavaFileObject notAbstract =
-        JavaFileObjects.forSourceLines(
-            "test.BindsInstanceNoParameters",
-            "package test;",
-            "",
-            "import dagger.BindsInstance;",
-            "",
-            "interface BindsInstanceNoParameters {",
-            "  @BindsInstance void noParams();",
-            "}");
-    Compilation compilation = daggerCompiler().compile(notAbstract);
-    assertThat(compilation).failed();
-    assertThat(compilation)
-        .hadErrorContaining(
-            "@BindsInstance methods should have exactly one parameter for the bound type")
-        .inFile(notAbstract)
-        .onLine(6);
-  }
-
-  @Test
-  public void bindsInstanceManyParameters() {
-    JavaFileObject notAbstract =
-        JavaFileObjects.forSourceLines(
-            "test.BindsInstanceNoParameter",
-            "package test;",
-            "",
-            "import dagger.BindsInstance;",
-            "",
-            "interface BindsInstanceManyParameters {",
-            "  @BindsInstance void manyParams(int i, long l);",
-            "}");
-    Compilation compilation = daggerCompiler().compile(notAbstract);
-    assertThat(compilation).failed();
-    assertThat(compilation)
-        .hadErrorContaining(
-            "@BindsInstance methods should have exactly one parameter for the bound type")
-        .inFile(notAbstract)
-        .onLine(6);
-  }
-
-  @Test
-  public void bindsInstanceFrameworkType() {
-    JavaFileObject bindsFrameworkType =
-        JavaFileObjects.forSourceLines(
-            "test.BindsInstanceFrameworkType",
-            "package test;",
-            "",
-            "import dagger.BindsInstance;",
-            "import dagger.producers.Producer;",
-            "import javax.inject.Provider;",
-            "",
-            "interface BindsInstanceFrameworkType {",
-            "  @BindsInstance void bindsProvider(Provider<Object> objectProvider);",
-            "  @BindsInstance void bindsProducer(Producer<Object> objectProducer);",
-            "}");
-    Compilation compilation = daggerCompiler().compile(bindsFrameworkType);
-    assertThat(compilation).failed();
-    assertThat(compilation)
-        .hadErrorContaining("@BindsInstance parameters may not be framework types")
-        .inFile(bindsFrameworkType)
-        .onLine(8);
-
-    assertThat(compilation)
-        .hadErrorContaining("@BindsInstance parameters may not be framework types")
-        .inFile(bindsFrameworkType)
-        .onLine(9);
-  }
-
-  private static Compiler daggerCompiler(Processor... extraProcessors) {
-    return javac().withProcessors(Lists.asList(new ComponentProcessor(), extraProcessors));
+        .generatedSourceFile("test.DaggerPublicComponent")
+        .hasSourceEquivalentTo(
+            JavaFileObjects.forSourceLines(
+                "test.DaggerPublicComponent",
+                "package test;",
+                "",
+                GeneratedLines.generatedImports(),
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "public final class DaggerPublicComponent implements PublicComponent {",
+                "  private final DaggerPublicComponent publicComponent = this;",
+                "",
+                "  private DaggerPublicComponent() {}",
+                "",
+                "  public static Builder builder() {",
+                "    return new Builder();",
+                "  }",
+                "",
+                "  public static PublicComponent create() {",
+                "    return new Builder().build();",
+                "  }",
+                "",
+                "  public static final class Builder {",
+                "    private Builder() {}",
+                "",
+                "    public PublicComponent build() {",
+                "      return new DaggerPublicComponent();",
+                "    }",
+                "  }",
+                "}"));
   }
 
   /**
@@ -2907,39 +2668,6 @@ public class ComponentProcessorTest {
               return roundEnv.errorRaised();
             }
           });
-    }
-  }
-
-  /**
-   * A simple {@link Processor} that generates one source file.
-   */
-  private static final class GeneratingProcessor extends AbstractProcessor {
-    private final String generatedClassName;
-    private final String generatedSource;
-    private boolean processed;
-
-    GeneratingProcessor(String generatedClassName, String... source) {
-      this.generatedClassName = generatedClassName;
-      this.generatedSource = Joiner.on("\n").join(source);
-    }
-
-    @Override
-    public Set<String> getSupportedAnnotationTypes() {
-      return ImmutableSet.of("*");
-    }
-
-    @Override
-    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-      if (!processed) {
-        processed = true;
-        try (Writer writer =
-                processingEnv.getFiler().createSourceFile(generatedClassName).openWriter()) {
-          writer.append(generatedSource);
-        } catch (IOException e) {
-          throw new RuntimeException(e);
-        }
-      }
-      return false;
     }
   }
 }

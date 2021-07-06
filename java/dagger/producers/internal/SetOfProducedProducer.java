@@ -37,9 +37,6 @@ import java.util.concurrent.ExecutionException;
  * A {@link Producer} implementation used to implement {@link Set} bindings. This producer returns a
  * future {@code Set<Produced<T>>} whose elements are populated by subsequent calls to the delegate
  * {@link Producer#get} methods.
- *
- * @author Jesse Beder
- * @since 2.0
  */
 public final class SetOfProducedProducer<T> extends AbstractProducer<Set<Produced<T>>> {
   public static <T> Producer<Set<T>> empty() {
@@ -104,15 +101,14 @@ public final class SetOfProducedProducer<T> extends AbstractProducer<Set<Produce
   }
 
   /**
-   * Returns a future {@link Set} of {@link Produced} values whose iteration order is that of the
-   * elements given by each of the producers, which are invoked in the order given at creation.
+   * Returns a future {@link Set} of {@link Produced} elements given by each of the producers.
    *
    * <p>If any of the delegate collections, or any elements therein, are null, then that
    * corresponding {@code Produced} element will fail with a NullPointerException.
    *
    * <p>Canceling this future will attempt to cancel all of the component futures; but if any of the
-   * delegate futures fail or are canceled, this future succeeds, with the appropriate failed
-   * {@link Produced}.
+   * delegate futures fail or are canceled, this future succeeds, with the appropriate failed {@link
+   * Produced}.
    *
    * @throws NullPointerException if any of the delegate producers return null
    */

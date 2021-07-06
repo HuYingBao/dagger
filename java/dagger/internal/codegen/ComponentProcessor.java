@@ -16,36 +16,100 @@
 
 package dagger.internal.codegen;
 
-import static dagger.internal.codegen.ModuleProcessingStep.moduleProcessingStep;
-import static dagger.internal.codegen.ModuleProcessingStep.producerModuleProcessingStep;
+import static dagger.internal.codegen.extension.DaggerStreams.toImmutableSet;
+import static net.ltgt.gradle.incap.IncrementalAnnotationProcessorType.ISOLATING;
 
+import androidx.room.compiler.processing.XProcessingEnv;
+import androidx.room.compiler.processing.XProcessingStep;
+import androidx.room.compiler.processing.compat.XConverters;
 import com.google.auto.common.BasicAnnotationProcessor;
+import com.google.auto.common.BasicAnnotationProcessor.Step;
 import com.google.auto.service.AutoService;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
-import com.google.googlejavaformat.java.filer.FormattingFiler;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.ImmutableSetMultimap;
+import com.google.common.collect.Maps;
+import com.google.errorprone.annotations.CheckReturnValue;
+import dagger.BindsInstance;
+import dagger.Component;
+import dagger.Module;
+import dagger.Provides;
+import dagger.internal.codegen.base.ClearableCache;
+import dagger.internal.codegen.base.SourceFileGenerationException;
+import dagger.internal.codegen.base.SourceFileGenerator;
+import dagger.internal.codegen.binding.InjectBindingRegistry;
+import dagger.internal.codegen.binding.MembersInjectionBinding;
+import dagger.internal.codegen.binding.ProvisionBinding;
+import dagger.internal.codegen.bindinggraphvalidation.BindingGraphValidationModule;
+import dagger.internal.codegen.compileroption.CompilerOptions;
+import dagger.internal.codegen.compileroption.ProcessingEnvironmentCompilerOptions;
+import dagger.internal.codegen.componentgenerator.ComponentGeneratorModule;
+import dagger.internal.codegen.validation.BindingMethodProcessingStep;
+import dagger.internal.codegen.validation.BindingMethodValidatorsModule;
+import dagger.internal.codegen.validation.BindsInstanceProcessingStep;
+import dagger.internal.codegen.validation.ExternalBindingGraphPlugins;
+import dagger.internal.codegen.validation.InjectBindingRegistryModule;
+import dagger.internal.codegen.validation.MonitoringModuleProcessingStep;
+import dagger.internal.codegen.validation.MultibindingAnnotationsProcessingStep;
+import dagger.internal.codegen.validation.ValidationBindingGraphPlugins;
+import dagger.spi.BindingGraphPlugin;
+import java.util.Arrays;
+import java.util.Optional;
 import java.util.Set;
-import javax.annotation.processing.Filer;
-import javax.annotation.processing.Messager;
+import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.Processor;
 import javax.annotation.processing.RoundEnvironment;
+import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.lang.model.SourceVersion;
-import javax.lang.model.util.Elements;
-import javax.lang.model.util.Types;
+import javax.lang.model.element.Element;
+import net.ltgt.gradle.incap.IncrementalAnnotationProcessor;
 
 /**
  * The annotation processor responsible for generating the classes that drive the Dagger 2.0
  * implementation.
  *
- * TODO(gak): give this some better documentation
- *
- * @author Gregory Kick
- * @since 2.0
+ * <p>TODO(gak): give this some better documentation
  */
+@IncrementalAnnotationProcessor(ISOLATING)
 @AutoService(Processor.class)
-public final class ComponentProcessor extends BasicAnnotationProcessor {
-  private InjectBindingRegistry injectBindingRegistry;
-  private FactoryGenerator factoryGenerator;
-  private MembersInjectorGenerator membersInjectorGenerator;
+public class ComponentProcessor extends BasicAnnotationProcessor {
+  private final Optional<ImmutableSet<BindingGraphPlugin>> testingPlugins;
+
+  @Inject InjectBindingRegistry injectBindingRegistry;
+  @Inject SourceFileGenerator<ProvisionBinding> factoryGenerator;
+  @Inject SourceFileGenerator<MembersInjectionBinding> membersInjectorGenerator;
+  @Inject ImmutableList<Step> processingSteps;
+  @Inject ValidationBindingGraphPlugins validationBindingGraphPlugins;
+  @Inject ExternalBindingGraphPlugins externalBindingGraphPlugins;
+  @Inject Set<ClearableCache> clearableCaches;
+
+  public ComponentProcessor() {
+    this.testingPlugins = Optional.empty();
+  }
+
+  private ComponentProcessor(Iterable<BindingGraphPlugin> testingPlugins) {
+    this.testingPlugins = Optional.of(ImmutableSet.copyOf(testingPlugins));
+  }
+
+  /**
+   * Creates a component processor that uses given {@link BindingGraphPlugin}s instead of loading
+   * them from a {@link java.util.ServiceLoader}.
+   */
+  @VisibleForTesting
+  public static ComponentProcessor forTesting(BindingGraphPlugin... testingPlugins) {
+    return forTesting(Arrays.asList(testingPlugins));
+  }
+
+  /**
+   * Creates a component processor that uses given {@link BindingGraphPlugin}s instead of loading
+   * them from a {@link java.util.ServiceLoader}.
+   */
+  @VisibleForTesting
+  public static ComponentProcessor forTesting(Iterable<BindingGraphPlugin> testingPlugins) {
+    return new ComponentProcessor(testingPlugins);
+  }
 
   @Override
   public SourceVersion getSupportedSourceVersion() {
@@ -53,185 +117,98 @@ public final class ComponentProcessor extends BasicAnnotationProcessor {
   }
 
   @Override
-  public Set<String> getSupportedOptions() {
-    return CompilerOptions.SUPPORTED_OPTIONS;
+  public ImmutableSet<String> getSupportedOptions() {
+    return ImmutableSet.<String>builder()
+        .addAll(ProcessingEnvironmentCompilerOptions.supportedOptions())
+        .addAll(validationBindingGraphPlugins.allSupportedOptions())
+        .addAll(externalBindingGraphPlugins.allSupportedOptions())
+        .build();
   }
 
   @Override
-  protected Iterable<? extends ProcessingStep> initSteps() {
-    Messager messager = processingEnv.getMessager();
-    Types types = processingEnv.getTypeUtils();
-    Elements elements = processingEnv.getElementUtils();
-    CompilerOptions compilerOptions = CompilerOptions.create(processingEnv, elements);
-    Filer filer =  new FormattingFiler(processingEnv.getFiler());
+  protected Iterable<? extends Step> steps() {
+    ProcessorComponent.factory()
+        .create(processingEnv, testingPlugins.orElseGet(this::loadExternalPlugins))
+        .inject(this);
 
-    KeyFormatter keyFormatter = new KeyFormatter();
-    MethodSignatureFormatter methodSignatureFormatter = new MethodSignatureFormatter(types);
-    BindingDeclarationFormatter bindingDeclarationFormatter =
-        new BindingDeclarationFormatter(methodSignatureFormatter, keyFormatter);
-    DependencyRequestFormatter dependencyRequestFormatter =
-        new DependencyRequestFormatter(types, elements);
+    validationBindingGraphPlugins.initializePlugins();
+    externalBindingGraphPlugins.initializePlugins();
 
-    Key.Factory keyFactory = new Key.Factory(types, elements);
+    return processingSteps;
+  }
 
-    InjectValidator injectValidator = new InjectValidator(types, elements, compilerOptions);
-    InjectValidator injectValidatorWhenGeneratingCode = injectValidator.whenGeneratingCode();
-    ProvidesMethodValidator providesMethodValidator = new ProvidesMethodValidator(elements, types);
-    ProducesMethodValidator producesMethodValidator = new ProducesMethodValidator(elements, types);
-    BindsMethodValidator bindsMethodValidator = new BindsMethodValidator(elements, types);
-    MultibindsMethodValidator multibindsMethodValidator =
-        new MultibindsMethodValidator(elements, types);
-    BindsOptionalOfMethodValidator bindsOptionalOfMethodValidator =
-        new BindsOptionalOfMethodValidator(elements, types);
-    AnyBindingMethodValidator anyBindingMethodValidator =
-        new AnyBindingMethodValidator(
-            providesMethodValidator,
-            producesMethodValidator,
-            bindsMethodValidator,
-            multibindsMethodValidator,
-            bindsOptionalOfMethodValidator);
-    ModuleValidator moduleValidator =
-        new ModuleValidator(
-            types,
-            elements,
-            anyBindingMethodValidator,
-            methodSignatureFormatter);
-    BuilderValidator builderValidator = new BuilderValidator(elements, types);
-    ComponentValidator subcomponentValidator =
-        ComponentValidator.createForSubcomponent(
-            elements, types, moduleValidator, builderValidator);
-    ComponentValidator componentValidator =
-        ComponentValidator.createForComponent(
-            elements, types, moduleValidator, subcomponentValidator, builderValidator);
-    MapKeyValidator mapKeyValidator = new MapKeyValidator(elements);
+  private ImmutableSet<BindingGraphPlugin> loadExternalPlugins() {
+    return ServiceLoaders.load(processingEnv, BindingGraphPlugin.class);
+  }
 
-    this.factoryGenerator =
-        new FactoryGenerator(filer, elements, compilerOptions, injectValidatorWhenGeneratingCode);
-    this.membersInjectorGenerator =
-        new MembersInjectorGenerator(filer, elements, injectValidatorWhenGeneratingCode);
-    ComponentGenerator componentGenerator =
-        new ComponentGenerator(filer, elements, types, keyFactory, compilerOptions);
-    ProducerFactoryGenerator producerFactoryGenerator =
-        new ProducerFactoryGenerator(filer, elements, compilerOptions);
-    MonitoringModuleGenerator monitoringModuleGenerator =
-        new MonitoringModuleGenerator(filer, elements);
-    ProductionExecutorModuleGenerator productionExecutorModuleGenerator =
-        new ProductionExecutorModuleGenerator(filer, elements);
+  @Singleton
+  @Component(
+      modules = {
+        BindingGraphValidationModule.class,
+        BindingMethodValidatorsModule.class,
+        ComponentGeneratorModule.class,
+        InjectBindingRegistryModule.class,
+        ProcessingEnvironmentModule.class,
+        ProcessingRoundCacheModule.class,
+        ProcessingStepsModule.class,
+        SourceFileGeneratorsModule.class,
+      })
+  interface ProcessorComponent {
+    void inject(ComponentProcessor processor);
 
-    DependencyRequest.Factory dependencyRequestFactory =
-        new DependencyRequest.Factory(keyFactory);
-    ProvisionBinding.Factory provisionBindingFactory =
-        new ProvisionBinding.Factory(elements, types, keyFactory, dependencyRequestFactory);
-    ProductionBinding.Factory productionBindingFactory =
-        new ProductionBinding.Factory(types, keyFactory, dependencyRequestFactory);
-    MultibindingDeclaration.Factory multibindingDeclarationFactory =
-        new MultibindingDeclaration.Factory(elements, types, keyFactory);
-    SubcomponentDeclaration.Factory subcomponentDeclarationFactory =
-        new SubcomponentDeclaration.Factory(keyFactory);
+    static Factory factory() {
+      return DaggerComponentProcessor_ProcessorComponent.factory();
+    }
 
-    MembersInjectionBinding.Factory membersInjectionBindingFactory =
-        new MembersInjectionBinding.Factory(elements, types, keyFactory, dependencyRequestFactory);
+    @Component.Factory
+    interface Factory {
+      @CheckReturnValue
+      ProcessorComponent create(
+          @BindsInstance ProcessingEnvironment processingEnv,
+          @BindsInstance ImmutableSet<BindingGraphPlugin> externalPlugins);
+    }
+  }
 
-    DelegateDeclaration.Factory bindingDelegateDeclarationFactory =
-        new DelegateDeclaration.Factory(types, keyFactory, dependencyRequestFactory);
-    OptionalBindingDeclaration.Factory optionalBindingDeclarationFactory =
-        new OptionalBindingDeclaration.Factory(keyFactory);
+  @Module
+  interface ProcessingStepsModule {
+    @Singleton
+    @Provides
+    static XProcessingEnv provideXProcessingEnv(ProcessingEnvironment processingEnv) {
+      return XProcessingEnv.create(processingEnv);
+    }
 
-    this.injectBindingRegistry =
-        new InjectBindingRegistry(
-            elements,
-            types,
-            messager,
-            injectValidator,
-            keyFactory,
-            provisionBindingFactory,
-            membersInjectionBindingFactory,
-            compilerOptions);
-
-    ModuleDescriptor.Factory moduleDescriptorFactory =
-        new ModuleDescriptor.Factory(
-            elements,
-            provisionBindingFactory,
-            productionBindingFactory,
-            multibindingDeclarationFactory,
-            bindingDelegateDeclarationFactory,
-            subcomponentDeclarationFactory,
-            optionalBindingDeclarationFactory);
-
-    ComponentDescriptor.Factory componentDescriptorFactory = new ComponentDescriptor.Factory(
-        elements, types, dependencyRequestFactory, moduleDescriptorFactory);
-
-    BindingGraph.Factory bindingGraphFactory =
-        new BindingGraph.Factory(
-            elements,
-            injectBindingRegistry,
-            keyFactory,
-            provisionBindingFactory,
-            productionBindingFactory);
-
-    AnnotationCreatorGenerator annotationCreatorGenerator =
-        new AnnotationCreatorGenerator(filer, elements);
-    UnwrappedMapKeyGenerator unwrappedMapKeyGenerator =
-        new UnwrappedMapKeyGenerator(filer, elements);
-    CanReleaseReferencesValidator canReleaseReferencesValidator =
-        new CanReleaseReferencesValidator();
-    ComponentHierarchyValidator componentHierarchyValidator =
-        new ComponentHierarchyValidator(compilerOptions, elements);
-    BindingGraphValidator bindingGraphValidator =
-        new BindingGraphValidator(
-            elements,
-            types,
-            compilerOptions,
-            injectValidatorWhenGeneratingCode,
-            injectBindingRegistry,
-            bindingDeclarationFormatter,
-            methodSignatureFormatter,
-            dependencyRequestFormatter,
-            keyFormatter,
-            keyFactory);
-
-    return ImmutableList.of(
-        new MapKeyProcessingStep(
-            messager, types, mapKeyValidator, annotationCreatorGenerator, unwrappedMapKeyGenerator),
-        new ForReleasableReferencesValidator(messager),
-        new CanReleaseReferencesProcessingStep(
-            messager, canReleaseReferencesValidator, annotationCreatorGenerator),
-        new InjectProcessingStep(injectBindingRegistry),
-        new MonitoringModuleProcessingStep(messager, monitoringModuleGenerator),
-        new ProductionExecutorModuleProcessingStep(messager, productionExecutorModuleGenerator),
-        new MultibindingAnnotationsProcessingStep(messager),
-        new BindsInstanceProcessingStep(messager),
-        moduleProcessingStep(messager, moduleValidator, provisionBindingFactory, factoryGenerator),
-        new ComponentProcessingStep(
-            ComponentDescriptor.Kind.COMPONENT,
-            messager,
-            componentValidator,
-            subcomponentValidator,
-            builderValidator,
-            componentHierarchyValidator,
-            bindingGraphValidator,
-            componentDescriptorFactory,
-            bindingGraphFactory,
-            componentGenerator),
-        producerModuleProcessingStep(
-            messager,
-            moduleValidator,
-            provisionBindingFactory,
-            factoryGenerator,
-            productionBindingFactory,
-            producerFactoryGenerator),
-        new ComponentProcessingStep(
-            ComponentDescriptor.Kind.PRODUCTION_COMPONENT,
-            messager,
-            componentValidator,
-            subcomponentValidator,
-            builderValidator,
-            componentHierarchyValidator,
-            bindingGraphValidator,
-            componentDescriptorFactory,
-            bindingGraphFactory,
-            componentGenerator),
-        new BindingMethodProcessingStep(messager, anyBindingMethodValidator));
+    @Provides
+    static ImmutableList<Step> processingSteps(
+        XProcessingEnv xProcessingEnv,
+        MapKeyProcessingStep mapKeyProcessingStep,
+        InjectProcessingStep injectProcessingStep,
+        AssistedInjectProcessingStep assistedInjectProcessingStep,
+        AssistedFactoryProcessingStep assistedFactoryProcessingStep,
+        AssistedProcessingStep assistedProcessingStep,
+        MonitoringModuleProcessingStep monitoringModuleProcessingStep,
+        MultibindingAnnotationsProcessingStep multibindingAnnotationsProcessingStep,
+        BindsInstanceProcessingStep bindsInstanceProcessingStep,
+        ModuleProcessingStep moduleProcessingStep,
+        ComponentProcessingStep componentProcessingStep,
+        ComponentHjarProcessingStep componentHjarProcessingStep,
+        BindingMethodProcessingStep bindingMethodProcessingStep,
+        CompilerOptions compilerOptions) {
+      return ImmutableList.of(
+          // Temporarily delegate to Step until we can convert all of these to XProcessingStep.
+          DelegatingStep.create(xProcessingEnv, mapKeyProcessingStep),
+          injectProcessingStep,
+          assistedInjectProcessingStep,
+          assistedFactoryProcessingStep,
+          assistedProcessingStep,
+          monitoringModuleProcessingStep,
+          multibindingAnnotationsProcessingStep,
+          bindsInstanceProcessingStep,
+          moduleProcessingStep,
+          compilerOptions.headerCompilation()
+              ? componentHjarProcessingStep
+              : componentProcessingStep,
+          bindingMethodProcessingStep);
+    }
   }
 
   @Override
@@ -243,6 +220,43 @@ public final class ComponentProcessor extends BasicAnnotationProcessor {
       } catch (SourceFileGenerationException e) {
         e.printMessageTo(processingEnv.getMessager());
       }
+    }
+    clearableCaches.forEach(ClearableCache::clearCache);
+  }
+
+  /** A {@link Step} that delegates to a {@link XProcessingStep}.  */
+  private static final class DelegatingStep implements Step {
+    static Step create(XProcessingEnv xProcessingEnv, XProcessingStep xProcessingStep) {
+      return new DelegatingStep(xProcessingEnv, xProcessingStep);
+    }
+
+    private final XProcessingEnv xProcessingEnv;
+    private final XProcessingStep delegate;
+
+    DelegatingStep(XProcessingEnv xProcessingEnv, XProcessingStep delegate) {
+      this.xProcessingEnv = xProcessingEnv;
+      this.delegate = delegate;
+    }
+
+    @Override
+    public Set<String> annotations() {
+      return delegate.annotations();
+    }
+
+    @Override
+    public Set<? extends Element> process(
+        ImmutableSetMultimap<String, Element> elementsByAnnotation) {
+      return delegate.process(
+              xProcessingEnv,
+              Maps.transformValues(
+                  elementsByAnnotation.asMap(),
+                  javacElements ->
+                      javacElements.stream()
+                          .map(element -> XConverters.toXProcessing(element, xProcessingEnv))
+                          .collect(toImmutableSet())))
+          .stream()
+          .map(XConverters::toJavac)
+          .collect(toImmutableSet());
     }
   }
 }

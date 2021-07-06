@@ -1,20 +1,38 @@
-package(default_visibility = ["//:src"])
+load("@rules_java//java:defs.bzl", "java_library", "java_plugin")
+load(
+    "//:build_defs.bzl",
+    "DOCLINT_HTML_AND_SYNTAX",
+    "POM_VERSION",
+)
+load("//tools:maven.bzl", "pom_file")
+load("@google_bazel_common//tools/javadoc:javadoc.bzl", "javadoc_library")
 
-load("//:build_defs.bzl", "DOCLINT_HTML_AND_SYNTAX")
+package(default_visibility = ["//:src"])
 
 java_library(
     name = "processor",
     srcs = glob(["*.java"]),
     javacopts = DOCLINT_HTML_AND_SYNTAX,
+    tags = ["maven_coordinates=com.google.dagger:dagger-grpc-server-processor:" + POM_VERSION],
     deps = [
         "//:dagger_with_compiler",
         "//java/dagger/grpc/server:annotations",
-        "//third_party:auto_common",
-        "//third_party:auto_service",
-        "//third_party:google_java_format",
-        "//third_party:guava",
-        "//third_party:javapoet",
+        "//java/dagger/internal/guava:base",
+        "//java/dagger/internal/guava:collect",
+        "//java/dagger/internal/guava:io",
+        "@google_bazel_common//third_party/java/auto:common",
+        "@google_bazel_common//third_party/java/auto:service",
+        "@google_bazel_common//third_party/java/google_java_format",
+        "@google_bazel_common//third_party/java/javapoet",
+        "@google_bazel_common//third_party/java/jsr250_annotations",
     ],
+)
+
+pom_file(
+    name = "pom",
+    artifact_id = "dagger-grpc-server-processor",
+    artifact_name = "Dagger gRPC Server Processor",
+    targets = [":processor"],
 )
 
 java_plugin(
@@ -28,8 +46,6 @@ filegroup(
     name = "javadoc-srcs",
     srcs = glob(["*.java"]),
 )
-
-load("//tools:javadoc.bzl", "javadoc_library")
 
 javadoc_library(
     name = "javadoc",

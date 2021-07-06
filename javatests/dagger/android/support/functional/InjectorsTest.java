@@ -20,25 +20,25 @@ import static com.google.common.truth.Truth.assertThat;
 
 import android.content.Intent;
 import android.content.res.Configuration;
-import org.robolectric.RobolectricTestRunner;
+import android.os.Build;
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
-import org.robolectric.RuntimeEnvironment;
 import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
 
-@RunWith(RobolectricTestRunner.class)
+@RunWith(AndroidJUnit4.class)
+// Robolectric requires Java9 to run API 29 and above, so use API 28 instead
+@Config(sdk = Build.VERSION_CODES.P)
 public class InjectorsTest {
-  private static final String MANIFEST =
-      "//javatests/dagger/android/support/functional"
-          + ":functional/AndroidManifest.xml";
-
   private ActivityController<TestActivity> activityController;
   private TestActivity activity;
   private TestParentFragment parentFragment;
   private TestChildFragment childFragment;
+  private TestDialogFragment dialogFragment;
   private TestService service;
   private TestIntentService intentService;
   private TestBroadcastReceiver broadcastReceiver;
@@ -54,21 +54,21 @@ public class InjectorsTest {
     childFragment =
         (TestChildFragment)
             parentFragment.getChildFragmentManager().findFragmentByTag("child-fragment");
+    dialogFragment =
+        (TestDialogFragment)
+            activity.getSupportFragmentManager().findFragmentByTag("dialog-fragment");
 
     service = Robolectric.buildService(TestService.class).create().get();
     intentService = Robolectric.buildIntentService(TestIntentService.class).create().get();
 
     broadcastReceiver = new TestBroadcastReceiver();
-    broadcastReceiver.onReceive(RuntimeEnvironment.application, new Intent());
+    broadcastReceiver.onReceive(ApplicationProvider.getApplicationContext(), new Intent());
 
     contentProvider = Robolectric.setupContentProvider(TestContentProvider.class);
   }
 
   @Test
-  @Config(
-    manifest = MANIFEST,
-    application = ComponentStructureFollowsControllerStructureApplication.class
-  )
+  @Config(application = ComponentStructureFollowsControllerStructureApplication.class)
   public void componentStructureFollowsControllerStructure() {
     assertThat(activity.componentHierarchy)
         .containsExactly(
@@ -91,6 +91,13 @@ public class InjectorsTest {
                 .ActivitySubcomponent.ParentFragmentSubcomponent.class,
             ComponentStructureFollowsControllerStructureApplication.ApplicationComponent
                 .ActivitySubcomponent.ParentFragmentSubcomponent.ChildFragmentSubcomponent.class);
+    assertThat(dialogFragment.componentHierarchy)
+        .containsExactly(
+            ComponentStructureFollowsControllerStructureApplication.ApplicationComponent.class,
+            ComponentStructureFollowsControllerStructureApplication.ApplicationComponent
+                .ActivitySubcomponent.class,
+            ComponentStructureFollowsControllerStructureApplication.ApplicationComponent
+                .ActivitySubcomponent.DialogFragmentSubcomponent.class);
 
     assertThat(service.componentHierarchy)
         .containsExactly(
@@ -116,10 +123,18 @@ public class InjectorsTest {
                 .ContentProviderSubcomponent.class);
 
     changeConfiguration();
+
+    OuterClass.TestInnerClassActivity innerClassActivity =
+        Robolectric.setupActivity(OuterClass.TestInnerClassActivity.class);
+    assertThat(innerClassActivity.componentHierarchy)
+        .containsExactly(
+            ComponentStructureFollowsControllerStructureApplication.ApplicationComponent.class,
+            ComponentStructureFollowsControllerStructureApplication.ApplicationComponent
+                .InnerActivitySubcomponent.class);
   }
 
   @Test
-  @Config(manifest = MANIFEST, application = AllControllersAreDirectChildrenOfApplication.class)
+  @Config(application = AllControllersAreDirectChildrenOfApplication.class)
   public void allControllersAreDirectChildrenOfApplication() {
     assertThat(activity.componentHierarchy)
         .containsExactly(
@@ -136,6 +151,11 @@ public class InjectorsTest {
             AllControllersAreDirectChildrenOfApplication.ApplicationComponent.class,
             AllControllersAreDirectChildrenOfApplication.ApplicationComponent
                 .ChildFragmentSubcomponent.class);
+    assertThat(dialogFragment.componentHierarchy)
+        .containsExactly(
+            AllControllersAreDirectChildrenOfApplication.ApplicationComponent.class,
+            AllControllersAreDirectChildrenOfApplication.ApplicationComponent
+                .DialogFragmentSubcomponent.class);
 
     assertThat(service.componentHierarchy)
         .containsExactly(
@@ -161,10 +181,18 @@ public class InjectorsTest {
                 .ContentProviderSubcomponent.class);
 
     changeConfiguration();
+
+    OuterClass.TestInnerClassActivity innerClassActivity =
+        Robolectric.setupActivity(OuterClass.TestInnerClassActivity.class);
+    assertThat(innerClassActivity.componentHierarchy)
+        .containsExactly(
+            AllControllersAreDirectChildrenOfApplication.ApplicationComponent.class,
+            AllControllersAreDirectChildrenOfApplication.ApplicationComponent
+                .InnerActivitySubcomponent.class);
   }
 
   @Test
-  @Config(manifest = MANIFEST, application = UsesGeneratedModulesApplication.class)
+  @Config(application = UsesGeneratedModulesApplication.class)
   public void usesGeneratedModules() {
     assertThat(activity.componentHierarchy)
         .containsExactly(
@@ -178,6 +206,10 @@ public class InjectorsTest {
         .containsExactly(
             UsesGeneratedModulesApplication.ApplicationComponent.class,
             UsesGeneratedModulesApplication.DummyChildFragmentSubcomponent.class);
+    assertThat(dialogFragment.componentHierarchy)
+        .containsExactly(
+            UsesGeneratedModulesApplication.ApplicationComponent.class,
+            UsesGeneratedModulesApplication.DummyDialogFragmentSubcomponent.class);
 
     assertThat(service.componentHierarchy)
         .containsExactly(
@@ -203,7 +235,14 @@ public class InjectorsTest {
     TestActivityWithScope activityWithScope =
         Robolectric.setupActivity(TestActivityWithScope.class);
     assertThat(activityWithScope.scopedStringProvider.get())
-        .isSameAs(activityWithScope.scopedStringProvider.get());
+        .isSameInstanceAs(activityWithScope.scopedStringProvider.get());
+
+    OuterClass.TestInnerClassActivity innerClassActivity =
+        Robolectric.setupActivity(OuterClass.TestInnerClassActivity.class);
+    assertThat(innerClassActivity.componentHierarchy)
+        .containsExactly(
+            UsesGeneratedModulesApplication.ApplicationComponent.class,
+            UsesGeneratedModulesApplication.DummyInnerActivitySubcomponent.class);
   }
 
   // https://github.com/google/dagger/issues/598

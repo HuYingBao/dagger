@@ -45,16 +45,7 @@ public final class DoubleCheck<T> implements Provider<T>, Lazy<T> {
         result = instance;
         if (result == UNINITIALIZED) {
           result = provider.get();
-          /* Get the current instance and test to see if the call to provider.get() has resulted
-           * in a recursive call.  If it returns the same instance, we'll allow it, but if the
-           * instances differ, throw. */
-          Object currentInstance = instance;
-          if (currentInstance != UNINITIALIZED && currentInstance != result) {
-            throw new IllegalStateException("Scoped provider was invoked recursively returning "
-                + "different results: " + currentInstance + " & " + result + ". This is likely "
-                + "due to a circular dependency.");
-          }
-          instance = result;
+          instance = reentrantCheck(instance, result);
           /* Null out the reference to the provider. We are never going to need it again, so we
            * can make it eligible for GC. */
           provider = null;
@@ -64,8 +55,28 @@ public final class DoubleCheck<T> implements Provider<T>, Lazy<T> {
     return (T) result;
   }
 
+  /**
+   * Checks to see if creating the new instance has resulted in a recursive call. If it has, and the
+   * new instance is the same as the current instance, return the instance. However, if the new
+   * instance differs from the current instance, an {@link IllegalStateException} is thrown.
+   */
+  public static Object reentrantCheck(Object currentInstance, Object newInstance) {
+    boolean isReentrant = !(currentInstance == UNINITIALIZED
+        // This check is needed for fastInit's implementation, which uses MemoizedSentinel types.
+        || currentInstance instanceof MemoizedSentinel);
+
+    if (isReentrant && currentInstance != newInstance) {
+      throw new IllegalStateException("Scoped provider was invoked recursively returning "
+          + "different results: " + currentInstance + " & " + newInstance + ". This is likely "
+          + "due to a circular dependency.");
+    }
+    return newInstance;
+  }
+
   /** Returns a {@link Provider} that caches the value from the given delegate provider. */
-  public static <T> Provider<T> provider(Provider<T> delegate) {
+  // This method is declared this way instead of "<T> Provider<T> provider(Provider<T> delegate)"
+  // to work around an Eclipse type inference bug: https://github.com/google/dagger/issues/949.
+  public static <P extends Provider<T>, T> Provider<T> provider(P delegate) {
     checkNotNull(delegate);
     if (delegate instanceof DoubleCheck) {
       /* This should be a rare case, but if we have a scoped @Binds that delegates to a scoped
@@ -76,7 +87,9 @@ public final class DoubleCheck<T> implements Provider<T>, Lazy<T> {
   }
 
   /** Returns a {@link Lazy} that caches the value from the given provider. */
-  public static <T> Lazy<T> lazy(Provider<T> provider) {
+  // This method is declared this way instead of "<T> Lazy<T> lazy(Provider<T> delegate)"
+  // to work around an Eclipse type inference bug: https://github.com/google/dagger/issues/949.
+  public static <P extends Provider<T>, T> Lazy<T> lazy(P provider) {
     if (provider instanceof Lazy) {
       @SuppressWarnings("unchecked")
       final Lazy<T> lazy = (Lazy<T>) provider;

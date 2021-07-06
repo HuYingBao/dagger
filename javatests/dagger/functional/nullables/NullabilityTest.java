@@ -35,7 +35,9 @@ public class NullabilityTest {
       component.nullFoo();
       fail();
     } catch (NullPointerException npe) {
-      assertThat(npe).hasMessage("Cannot return null from a non-@Nullable @Provides method");
+      assertThat(npe)
+          .hasMessageThat()
+          .isEqualTo("Cannot return null from a non-@Nullable @Provides method");
     }
 
     // set number to non-null so we can create
@@ -50,9 +52,21 @@ public class NullabilityTest {
     validate(true, nullFoo.fieldInjectedString, nullFoo.fieldInjectedStringProvider,
         nullFoo.fieldInjectedNumberProvider);
   }
-  
+
+  @Test public void testNullability_reusuable() {
+    NullModule module = new NullModule();
+    NullComponent component = DaggerNullComponent.builder().nullModule(module).build();
+
+    // Test that the @Nullable @Reusuable binding is cached properly even when the value is null.
+    assertThat(module.integerCallCount).isEqualTo(0);
+    assertThat(component.integer()).isNull();
+    assertThat(module.integerCallCount).isEqualTo(1);
+    assertThat(component.integer()).isNull();
+    assertThat(module.integerCallCount).isEqualTo(1);
+  }
+
   @Test public void testNullability_components() {
-    NullComponent nullComponent = new NullComponent() {      
+    NullComponent nullComponent = new NullComponent() {
       @Override public Provider<String> stringProvider() {
         return new Provider<String>() {
           @Override public String get() {
@@ -60,11 +74,11 @@ public class NullabilityTest {
           }
         };
       }
-      
+
       @Override public String string() {
         return null;
       }
-      
+
       @Override public Provider<Number> numberProvider() {
         return new Provider<Number>() {
           @Override public Number get() {
@@ -72,25 +86,31 @@ public class NullabilityTest {
           }
         };
       }
-      
+
       @Override public Number number() {
         return null;
       }
-      
+
       @Override public NullFoo nullFoo() {
+        return null;
+      }
+
+      @Override public Integer integer() {
         return null;
       }
     };
     NullComponentWithDependency component =
         DaggerNullComponentWithDependency.builder().nullComponent(nullComponent).build();
     validate(false, component.string(), component.stringProvider(), component.numberProvider());
-    
+
     // Also validate that the component's number() method fails
     try {
       component.number();
       fail();
     } catch (NullPointerException npe) {
-      assertThat(npe).hasMessage("Cannot return null from a non-@Nullable component method");
+      assertThat(npe)
+          .hasMessageThat()
+          .isEqualTo("Cannot return null from a non-@Nullable component method");
     }
   }
 
@@ -103,9 +123,13 @@ public class NullabilityTest {
     try {
       numberProvider.get();
       fail();
-    } catch(NullPointerException npe) {
-      assertThat(npe).hasMessage("Cannot return null from a non-@Nullable "
-          + (fromProvides ? "@Provides" : "component") + " method");
+    } catch (NullPointerException npe) {
+      assertThat(npe)
+          .hasMessageThat()
+          .isEqualTo(
+              "Cannot return null from a non-@Nullable "
+                  + (fromProvides ? "@Provides" : "component")
+                  + " method");
     }
     assertThat(stringProvider.get()).isNull();
   }

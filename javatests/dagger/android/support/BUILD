@@ -15,23 +15,33 @@
 # Description:
 #   Tests for Dagger's Android and Support library integrations
 
-package(default_visibility = ["//:src"])
-
 load("//:build_defs.bzl", "DOCLINT_HTML_AND_SYNTAX")
 load("//:test_defs.bzl", "GenRobolectricTests")
+
+package(default_visibility = ["//:src"])
 
 GenRobolectricTests(
     name = "android-support-tests",
     srcs = glob(["*.java"]),
+    functional = False,
     javacopts = DOCLINT_HTML_AND_SYNTAX,
+    manifest_values = {
+        "minSdkVersion": "14",
+    },
     deps = [
         "//:dagger_with_compiler",
         "//java/dagger/android",
         "//java/dagger/android/support",
-        "//third_party:guava",
-        "//third_party:junit",
-        "//third_party:truth",
-        "@androidsdk//com.android.support:appcompat-v7-25.0.0",
-        "@androidsdk//com.android.support:support-v4-25.0.0",
+        "//java/dagger/internal/guava:base",
+        "//java/dagger/internal/guava:collect",
+        "//java/dagger/internal/guava:concurrent",
+        "@google_bazel_common//third_party/java/junit",
+        "@google_bazel_common//third_party/java/truth",
+        "@maven//:androidx_activity_activity",
+        "@maven//:androidx_appcompat_appcompat",
+        "@maven//:androidx_fragment_fragment",
+        "@maven//:androidx_lifecycle_lifecycle_common",
+        "@maven//:androidx_lifecycle_lifecycle_viewmodel",
+        "@maven//:androidx_lifecycle_lifecycle_viewmodel_savedstate",
     ],
 )

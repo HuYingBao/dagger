@@ -35,9 +35,6 @@ import javax.inject.Provider;
  * {@literal A ← (E ← D ← B ← C ← Provider<A>, Lazy<A>), (B ← C ← Provider<A>, Lazy<A>)}
  * {@literal S ← Provider<S>, Lazy<S>}
  * </pre>
- *
- * @author Tony Bentancur
- * @since 2.0
  */
 final class Cycles {
   private Cycles() {}
@@ -100,7 +97,7 @@ final class Cycles {
       this.sProvider = sProvider;
     }
   }
-
+  
   static class X {
     public final Y y;
 
@@ -146,10 +143,10 @@ final class Cycles {
     A a();
 
     C c();
-
+    
     ChildCycleComponent child();
   }
-
+  
   @Module
   static class CycleModule {
     @Provides
@@ -163,13 +160,35 @@ final class Cycles {
   interface SelfCycleComponent {
     S s();
   }
-
+  
   @Subcomponent
   interface ChildCycleComponent {
     @SuppressWarnings("dependency-cycle")
     A a();
-
+    
     @SuppressWarnings("dependency-cycle")
     Object object();
+  }
+
+  interface Foo {}
+
+  static class Bar implements Foo {
+    @Inject
+    Bar(Provider<Foo> fooProvider) {}
+  }
+
+  /**
+   * A component with a cycle in which a {@code @Binds} binding depends on the binding that has to
+   * be deferred.
+   */
+  @Component(modules = BindsCycleModule.class)
+  interface BindsCycleComponent {
+    Bar bar();
+  }
+
+  @Module
+  abstract static class BindsCycleModule {
+    @Binds
+    abstract Foo foo(Bar bar);
   }
 }

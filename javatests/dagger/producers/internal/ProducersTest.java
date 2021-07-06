@@ -49,7 +49,10 @@ public class ProducersTest {
     ListenableFuture<String> future = Futures.immediateFailedFuture(new RuntimeException("monkey"));
     ListenableFuture<Produced<String>> producedFuture = Producers.createFutureProduced(future);
     assertThat(producedFuture.isDone()).isTrue();
-    assertThat(getProducedException(producedFuture.get()).getCause()).hasMessage("monkey");
+    assertThat(getProducedException(producedFuture.get()))
+        .hasCauseThat()
+        .hasMessageThat()
+        .isEqualTo("monkey");
   }
 
   @Test public void createFutureProduced_cancelPropagatesBackwards() throws Exception {
@@ -66,7 +69,8 @@ public class ProducersTest {
     assertThat(producedFuture.isDone()).isFalse();
     future.cancel(false);
     assertThat(producedFuture.isCancelled()).isFalse();
-    assertThat(getProducedException(producedFuture.get()).getCause())
+    assertThat(getProducedException(producedFuture.get()))
+        .hasCauseThat()
         .isInstanceOf(CancellationException.class);
   }
 
@@ -94,7 +98,7 @@ public class ProducersTest {
       setFuture.get();
       fail();
     } catch (ExecutionException e) {
-      assertThat(e.getCause()).hasMessage("monkey");
+      assertThat(e).hasCauseThat().hasMessageThat().isEqualTo("monkey");
     }
   }
 
@@ -120,11 +124,11 @@ public class ProducersTest {
       future.get();
       fail();
     } catch (ExecutionException e) {
-      assertThat(e.getCause()).hasMessage("gorilla");
+      assertThat(e).hasCauseThat().hasMessageThat().isEqualTo("gorilla");
     }
   }
 
-  @Test public void producerFromProvider() throws Exception {
+  @Test public void producerFromProvider_doesntCache() throws Exception {
     Producer<Integer> producer = Producers.producerFromProvider(new Provider<Integer>() {
       int i = 0;
 
@@ -133,7 +137,7 @@ public class ProducersTest {
       }
     });
     assertThat(producer.get().get()).isEqualTo(0);
-    assertThat(producer.get().get()).isEqualTo(0);
-    assertThat(producer.get().get()).isEqualTo(0);
+    assertThat(producer.get().get()).isEqualTo(1);
+    assertThat(producer.get().get()).isEqualTo(2);
   }
 }

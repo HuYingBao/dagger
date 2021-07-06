@@ -16,13 +16,15 @@
 
 package dagger.internal.codegen;
 
-import static com.google.common.truth.Truth.assertAbout;
 import static com.google.common.truth.Truth.assertThat;
-import static com.google.testing.compile.JavaSourceSubjectFactory.javaSource;
+import static com.google.testing.compile.CompilationSubject.assertThat;
+import static com.google.testing.compile.Compiler.javac;
 
 import com.google.common.collect.ImmutableSet;
+import com.google.testing.compile.Compilation;
 import com.google.testing.compile.JavaFileObjects;
-import dagger.internal.codegen.ValidationReport.Builder;
+import dagger.internal.codegen.validation.ValidationReport;
+import dagger.internal.codegen.validation.ValidationReport.Builder;
 import java.util.Set;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.RoundEnvironment;
@@ -42,67 +44,67 @@ public class ValidationReportTest {
 
   @Test
   public void basicReport() {
-    assertAbout(javaSource())
-        .that(TEST_CLASS_FILE)
-        .processedWith(
-            new SimpleTestProcessor() {
-              @Override
-              void test() {
-                Builder<TypeElement> reportBuilder =
-                    ValidationReport.about(getTypeElement("test.TestClass"));
-                reportBuilder.addError("simple error");
-                reportBuilder.build().printMessagesTo(processingEnv.getMessager());
-              }
-            })
-        .failsToCompile()
-        .withErrorContaining("simple error")
-        .in(TEST_CLASS_FILE)
-        .onLine(3);
+    Compilation compilation =
+        javac()
+            .withProcessors(
+                new SimpleTestProcessor() {
+                  @Override
+                  void test() {
+                    Builder<TypeElement> reportBuilder =
+                        ValidationReport.about(getTypeElement("test.TestClass"));
+                    reportBuilder.addError("simple error");
+                    reportBuilder.build().printMessagesTo(processingEnv.getMessager());
+                  }
+                })
+            .compile(TEST_CLASS_FILE);
+    assertThat(compilation).failed();
+    assertThat(compilation).hadErrorContaining("simple error").inFile(TEST_CLASS_FILE).onLine(3);
   }
 
   @Test
   public void messageOnDifferentElement() {
-    assertAbout(javaSource())
-        .that(TEST_CLASS_FILE)
-        .processedWith(
-            new SimpleTestProcessor() {
-              @Override
-              void test() {
-                Builder<TypeElement> reportBuilder =
-                    ValidationReport.about(getTypeElement("test.TestClass"));
-                reportBuilder.addError("simple error", getTypeElement(String.class));
-                reportBuilder.build().printMessagesTo(processingEnv.getMessager());
-              }
-            })
-        .failsToCompile()
-        .withErrorContaining("[java.lang.String] simple error")
-        .in(TEST_CLASS_FILE)
+    Compilation compilation =
+        javac()
+            .withProcessors(
+                new SimpleTestProcessor() {
+                  @Override
+                  void test() {
+                    Builder<TypeElement> reportBuilder =
+                        ValidationReport.about(getTypeElement("test.TestClass"));
+                    reportBuilder.addError("simple error", getTypeElement(String.class));
+                    reportBuilder.build().printMessagesTo(processingEnv.getMessager());
+                  }
+                })
+            .compile(TEST_CLASS_FILE);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("[java.lang.String] simple error")
+        .inFile(TEST_CLASS_FILE)
         .onLine(3);
   }
 
   @Test
   public void subreport() {
-    assertAbout(javaSource())
-        .that(TEST_CLASS_FILE)
-        .processedWith(
-            new SimpleTestProcessor() {
-              @Override
-              void test() {
-                Builder<TypeElement> reportBuilder =
-                    ValidationReport.about(getTypeElement("test.TestClass"));
-                reportBuilder.addError("simple error");
-                ValidationReport<TypeElement> parentReport =
-                    ValidationReport.about(getTypeElement(String.class))
-                        .addSubreport(reportBuilder.build())
-                        .build();
-                assertThat(parentReport.isClean()).isFalse();
-                parentReport.printMessagesTo(processingEnv.getMessager());
-              }
-            })
-        .failsToCompile()
-        .withErrorContaining("simple error")
-        .in(TEST_CLASS_FILE)
-        .onLine(3);
+    Compilation compilation =
+        javac()
+            .withProcessors(
+                new SimpleTestProcessor() {
+                  @Override
+                  void test() {
+                    Builder<TypeElement> reportBuilder =
+                        ValidationReport.about(getTypeElement("test.TestClass"));
+                    reportBuilder.addError("simple error");
+                    ValidationReport<TypeElement> parentReport =
+                        ValidationReport.about(getTypeElement(String.class))
+                            .addSubreport(reportBuilder.build())
+                            .build();
+                    assertThat(parentReport.isClean()).isFalse();
+                    parentReport.printMessagesTo(processingEnv.getMessager());
+                  }
+                })
+            .compile(TEST_CLASS_FILE);
+    assertThat(compilation).failed();
+    assertThat(compilation).hadErrorContaining("simple error").inFile(TEST_CLASS_FILE).onLine(3);
   }
 
   private static abstract class SimpleTestProcessor extends AbstractProcessor {

@@ -17,20 +17,31 @@
 package dagger.internal.codegen;
 
 import static com.google.common.truth.Truth.assertAbout;
-import static com.google.testing.compile.JavaSourcesSubject.assertThat;
 import static com.google.testing.compile.JavaSourcesSubjectFactory.javaSources;
-import static dagger.internal.codegen.GeneratedLines.GENERATED_ANNOTATION;
 
 import com.google.auto.value.processor.AutoAnnotationProcessor;
 import com.google.common.collect.ImmutableList;
 import com.google.testing.compile.JavaFileObjects;
+import java.util.Collection;
 import javax.tools.JavaFileObject;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameters;
 
-@RunWith(JUnit4.class)
+@RunWith(Parameterized.class)
 public class MapKeyProcessorTest {
+  @Parameters(name = "{0}")
+  public static Collection<Object[]> parameters() {
+    return CompilerMode.TEST_PARAMETERS;
+  }
+
+  private final CompilerMode compilerMode;
+
+  public MapKeyProcessorTest(CompilerMode compilerMode) {
+    this.compilerMode = compilerMode;
+  }
+
   @Test
   public void mapKeyCreatorFile() {
     JavaFileObject enumKeyFile = JavaFileObjects.forSourceLines("test.PathKey",
@@ -57,10 +68,9 @@ public class MapKeyProcessorTest {
             "test.PathKeyCreator",
             "package test;",
             "",
-            "import com.google.auto.value.AutoAnnotation;",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports("import com.google.auto.value.AutoAnnotation;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class PathKeyCreator {",
             "  private PathKeyCreator() {}",
             "",
@@ -71,6 +81,7 @@ public class MapKeyProcessorTest {
             "}");
     assertAbout(javaSources())
         .that(ImmutableList.of(enumKeyFile, pathEnumFile))
+        .withCompilerOptions(compilerMode.javacopts())
         .processedWith(new ComponentProcessor(), new AutoAnnotationProcessor())
         .compilesWithoutError()
         .and()
@@ -105,10 +116,9 @@ public class MapKeyProcessorTest {
             "test.Container_PathKeyCreator",
             "package test;",
             "",
-            "import com.google.auto.value.AutoAnnotation;",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports("import com.google.auto.value.AutoAnnotation;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class Container_PathKeyCreator {",
             "  private Container_PathKeyCreator() {}",
             "",
@@ -121,401 +131,10 @@ public class MapKeyProcessorTest {
             "}");
     assertAbout(javaSources())
         .that(ImmutableList.of(enumKeyFile, pathEnumFile))
+        .withCompilerOptions(compilerMode.javacopts())
         .processedWith(new ComponentProcessor(), new AutoAnnotationProcessor())
         .compilesWithoutError()
         .and()
         .generatesSources(generatedKeyCreator);
-  }
-
-  @Test
-  public void mapKeyComponentFileWithDisorderedKeyField() {
-    JavaFileObject mapModuleOneFile = JavaFileObjects.forSourceLines("test.MapModuleOne",
-        "package test;",
-        "",
-        "import dagger.Module;",
-        "import dagger.Provides;",
-        "import dagger.multibindings.IntoMap;",
-        "",
-        "@Module",
-        "final class MapModuleOne {",
-        "  @Provides",
-        "  @IntoMap",
-        "  @PathKey(relativePath = \"AdminPath\", value = PathEnum.ADMIN)",
-        "  Handler provideAdminHandler() {",
-        "    return new AdminHandler();",
-        "  }",
-        "}");
-    JavaFileObject mapModuleTwoFile =JavaFileObjects.forSourceLines("test.MapModuleTwo",
-        "package test;",
-        "",
-        "import dagger.Module;",
-        "import dagger.Provides;",
-        "import dagger.multibindings.IntoMap;",
-        "",
-        "@Module",
-        "final class MapModuleTwo {",
-        "  @Provides",
-        "  @IntoMap",
-        "  @PathKey(value = PathEnum.LOGIN, relativePath = \"LoginPath\")",
-        "  Handler provideLoginHandler() {",
-        "    return new LoginHandler();",
-        "  }",
-        "}");
-    JavaFileObject enumKeyFile = JavaFileObjects.forSourceLines("test.PathKey",
-        "package test;",
-        "import dagger.MapKey;",
-        "import java.lang.annotation.Retention;",
-        "import static java.lang.annotation.RetentionPolicy.RUNTIME;",
-        "",
-        "@MapKey(unwrapValue = false)",
-        "@Retention(RUNTIME)",
-        "public @interface PathKey {",
-        "  PathEnum value();",
-        "  String relativePath() default \"DefaultPath\";",
-        "}");
-    JavaFileObject pathEnumFile = JavaFileObjects.forSourceLines("test.PathEnum",
-        "package test;",
-        "",
-        "public enum PathEnum {",
-        "    ADMIN,",
-        "    LOGIN;",
-        "}");
-    JavaFileObject handlerFile = JavaFileObjects.forSourceLines("test.Handler",
-        "package test;",
-        "",
-        "interface Handler {}");
-    JavaFileObject loginHandlerFile = JavaFileObjects.forSourceLines("test.LoginHandler",
-        "package test;",
-        "",
-        "class LoginHandler implements Handler {",
-        "  public LoginHandler() {}",
-        "}");
-    JavaFileObject adminHandlerFile = JavaFileObjects.forSourceLines("test.AdminHandler",
-        "package test;",
-        "",
-        "class AdminHandler implements Handler {",
-        "  public AdminHandler() {}",
-        "}");
-    JavaFileObject componentFile = JavaFileObjects.forSourceLines("test.TestComponent",
-        "package test;",
-        "",
-        "import dagger.Component;",
-        "import java.util.Map;",
-        "import javax.inject.Provider;",
-        "",
-        "@Component(modules = {MapModuleOne.class, MapModuleTwo.class})",
-        "interface TestComponent {",
-        "  Map<PathKey, Provider<Handler>> dispatcher();",
-        "}");
-    JavaFileObject generatedComponent =
-        JavaFileObjects.forSourceLines(
-            "test.DaggerTestComponent",
-            "package test;",
-            "",
-            "import dagger.internal.MapProviderFactory;",
-            "import dagger.internal.Preconditions;",
-            "import java.util.Map;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
-            "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerTestComponent implements TestComponent {",
-            "  private Provider<Handler> provideAdminHandlerProvider;",
-            "  private Provider<Handler> provideLoginHandlerProvider;",
-            "  private Provider<Map<PathKey, Provider<Handler>>>",
-            "      mapOfPathKeyAndProviderOfHandlerProvider;",
-            "",
-            "  private DaggerTestComponent(Builder builder) {",
-            "    assert builder != null;",
-            "    initialize(builder);",
-            "  }",
-            "",
-            "  public static Builder builder() {",
-            "    return new Builder();",
-            "  }",
-            "",
-            "  public static TestComponent create() {",
-            "    return new Builder().build();",
-            "  }",
-            "",
-            "  @SuppressWarnings(\"unchecked\")",
-            "  private void initialize(final Builder builder) {",
-            "    this.provideAdminHandlerProvider =",
-            "        MapModuleOne_ProvideAdminHandlerFactory.create(builder.mapModuleOne);",
-            "    this.provideLoginHandlerProvider =",
-            "        MapModuleTwo_ProvideLoginHandlerFactory.create(builder.mapModuleTwo);",
-            "    this.mapOfPathKeyAndProviderOfHandlerProvider =",
-            "        MapProviderFactory.<PathKey, Handler>builder(2)",
-            "            .put(PathKeyCreator.createPathKey(PathEnum.ADMIN, \"AdminPath\"),",
-            "                provideAdminHandlerProvider)",
-            "            .put(PathKeyCreator.createPathKey(PathEnum.LOGIN, \"LoginPath\"),",
-            "                provideLoginHandlerProvider)",
-            "            .build();",
-            "  }",
-            "",
-            "  @Override",
-            "  public Map<PathKey, Provider<Handler>> dispatcher() {",
-            "    return mapOfPathKeyAndProviderOfHandlerProvider.get();",
-            "  }",
-            "",
-            "  public static final class Builder {",
-            "    private MapModuleOne mapModuleOne;",
-            "    private MapModuleTwo mapModuleTwo;",
-            "",
-            "    private Builder() {",
-            "    }",
-            "",
-            "    public TestComponent build() {",
-            "      if (mapModuleOne == null) {",
-            "        this.mapModuleOne = new MapModuleOne();",
-            "      }",
-            "      if (mapModuleTwo == null) {",
-            "        this.mapModuleTwo = new MapModuleTwo();",
-            "      }",
-            "      return new DaggerTestComponent(this);",
-            "    }",
-            "",
-            "    public Builder mapModuleOne(MapModuleOne mapModuleOne) {",
-            "      this.mapModuleOne = Preconditions.checkNotNull(mapModuleOne);",
-            "      return this;",
-            "    }",
-            "",
-            "    public Builder mapModuleTwo(MapModuleTwo mapModuleTwo) {",
-            "      this.mapModuleTwo = Preconditions.checkNotNull(mapModuleTwo);",
-            "      return this;",
-            "    }",
-            "  }",
-            "}");
-    assertAbout(javaSources())
-        .that(
-            ImmutableList.of(
-                mapModuleOneFile,
-                mapModuleTwoFile,
-                enumKeyFile,
-                pathEnumFile,
-                handlerFile,
-                loginHandlerFile,
-                adminHandlerFile,
-                componentFile))
-        .processedWith(new ComponentProcessor(), new AutoAnnotationProcessor())
-        .compilesWithoutError()
-        .and()
-        .generatesSources(generatedComponent);
-  }
-
-  @Test
-  public void mapKeyComponentFileWithDefaultField() {
-    JavaFileObject mapModuleOneFile = JavaFileObjects.forSourceLines("test.MapModuleOne",
-        "package test;",
-        "",
-        "import dagger.Module;",
-        "import dagger.Provides;",
-        "import dagger.multibindings.IntoMap;",
-        "",
-        "@Module",
-        "final class MapModuleOne {",
-        "  @Provides",
-        "  @IntoMap",
-        "  @PathKey(value = PathEnum.ADMIN) Handler provideAdminHandler() {",
-        "    return new AdminHandler();",
-        "  }",
-        "}");
-    JavaFileObject mapModuleTwoFile =JavaFileObjects.forSourceLines("test.MapModuleTwo",
-        "package test;",
-        "",
-        "import dagger.Module;",
-        "import dagger.Provides;",
-        "import dagger.multibindings.IntoMap;",
-        "",
-        "@Module",
-        "final class MapModuleTwo {",
-        "  @Provides",
-        "  @IntoMap",
-        "  @PathKey(value = PathEnum.LOGIN, relativePath = \"LoginPath\")",
-        "  Handler provideLoginHandler() {",
-        "    return new LoginHandler();",
-        "  }",
-        "}");
-    JavaFileObject enumKeyFile = JavaFileObjects.forSourceLines("test.PathKey",
-        "package test;",
-        "import dagger.MapKey;",
-        "import java.lang.annotation.Retention;",
-        "import static java.lang.annotation.RetentionPolicy.RUNTIME;",
-        "",
-        "@MapKey(unwrapValue = false)",
-        "@Retention(RUNTIME)",
-        "public @interface PathKey {",
-        "  PathEnum value();",
-        "  String relativePath() default \"DefaultPath\";",
-        "}");
-    JavaFileObject pathEnumFile = JavaFileObjects.forSourceLines("test.PathEnum",
-        "package test;",
-        "",
-        "public enum PathEnum {",
-        "    ADMIN,",
-        "    LOGIN;",
-        "}");
-    JavaFileObject handlerFile = JavaFileObjects.forSourceLines("test.Handler",
-        "package test;",
-        "",
-        "interface Handler {}");
-    JavaFileObject loginHandlerFile = JavaFileObjects.forSourceLines("test.LoginHandler",
-        "package test;",
-        "",
-        "class LoginHandler implements Handler {",
-        "  public LoginHandler() {}",
-        "}");
-    JavaFileObject adminHandlerFile = JavaFileObjects.forSourceLines("test.AdminHandler",
-        "package test;",
-        "",
-        "class AdminHandler implements Handler {",
-        "  public AdminHandler() {}",
-        "}");
-    JavaFileObject componentFile = JavaFileObjects.forSourceLines("test.TestComponent",
-        "package test;",
-        "",
-        "import dagger.Component;",
-        "import java.util.Map;",
-        "import javax.inject.Provider;",
-        "",
-        "@Component(modules = {MapModuleOne.class, MapModuleTwo.class})",
-        "interface TestComponent {",
-        "  Map<PathKey, Provider<Handler>> dispatcher();",
-        "}");
-    JavaFileObject generatedComponent =
-        JavaFileObjects.forSourceLines(
-            "test.DaggerTestComponent",
-            "package test;",
-            "",
-            "import dagger.internal.MapProviderFactory;",
-            "import dagger.internal.Preconditions;",
-            "import java.util.Map;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
-            "",
-            GENERATED_ANNOTATION,
-            "public final class DaggerTestComponent implements TestComponent {",
-            "  private Provider<Handler> provideAdminHandlerProvider;",
-            "  private Provider<Handler> provideLoginHandlerProvider;",
-            "  private Provider<Map<PathKey, Provider<Handler>>>",
-            "      mapOfPathKeyAndProviderOfHandlerProvider;",
-            "",
-            "  private DaggerTestComponent(Builder builder) {",
-            "    assert builder != null;",
-            "    initialize(builder);",
-            "  }",
-            "",
-            "  public static Builder builder() {",
-            "    return new Builder();",
-            "  }",
-            "",
-            "  public static TestComponent create() {",
-            "    return new Builder().build();",
-            "  }",
-            "",
-            "  @SuppressWarnings(\"unchecked\")",
-            "  private void initialize(final Builder builder) {",
-            "    this.provideAdminHandlerProvider =",
-            "        MapModuleOne_ProvideAdminHandlerFactory.create(builder.mapModuleOne);",
-            "    this.provideLoginHandlerProvider =",
-            "        MapModuleTwo_ProvideLoginHandlerFactory.create(builder.mapModuleTwo);",
-            "    this.mapOfPathKeyAndProviderOfHandlerProvider =",
-            "        MapProviderFactory.<PathKey, Handler>builder(2)",
-            "            .put(PathKeyCreator.createPathKey(PathEnum.ADMIN, \"DefaultPath\"),",
-            "                provideAdminHandlerProvider)",
-            "            .put(PathKeyCreator.createPathKey(PathEnum.LOGIN, \"LoginPath\"),",
-            "                provideLoginHandlerProvider)",
-            "            .build();",
-            "  }",
-            "",
-            "  @Override",
-            "  public Map<PathKey, Provider<Handler>> dispatcher() {",
-            "    return mapOfPathKeyAndProviderOfHandlerProvider.get();",
-            "  }",
-            "",
-            "  public static final class Builder {",
-            "    private MapModuleOne mapModuleOne;",
-            "    private MapModuleTwo mapModuleTwo;",
-            "",
-            "    private Builder() {",
-            "    }",
-            "",
-            "    public TestComponent build() {",
-            "      if (mapModuleOne == null) {",
-            "        this.mapModuleOne = new MapModuleOne();",
-            "      }",
-            "      if (mapModuleTwo == null) {",
-            "        this.mapModuleTwo = new MapModuleTwo();",
-            "      }",
-            "      return new DaggerTestComponent(this);",
-            "    }",
-            "",
-            "    public Builder mapModuleOne(MapModuleOne mapModuleOne) {",
-            "      this.mapModuleOne = Preconditions.checkNotNull(mapModuleOne);",
-            "      return this;",
-            "    }",
-            "",
-            "    public Builder mapModuleTwo(MapModuleTwo mapModuleTwo) {",
-            "      this.mapModuleTwo = Preconditions.checkNotNull(mapModuleTwo);",
-            "      return this;",
-            "    }",
-            "  }",
-            "}");
-    assertAbout(javaSources())
-        .that(
-            ImmutableList.of(
-                mapModuleOneFile,
-                mapModuleTwoFile,
-                enumKeyFile,
-                pathEnumFile,
-                handlerFile,
-                loginHandlerFile,
-                adminHandlerFile,
-                componentFile))
-        .processedWith(new ComponentProcessor(), new AutoAnnotationProcessor())
-        .compilesWithoutError()
-        .and()
-        .generatesSources(generatedComponent);
-  }
-
-  @Test
-  public void mapKeyWithDefaultValue() {
-    JavaFileObject module =
-        JavaFileObjects.forSourceLines(
-            "test.MapModule",
-            "package test;",
-            "",
-            "import dagger.Module;",
-            "import dagger.Provides;",
-            "import dagger.multibindings.IntoMap;",
-            "",
-            "@Module",
-            "final class MapModule {",
-            "  @Provides",
-            "  @IntoMap",
-            "  @BoolKey int provideFalseValue() {",
-            "    return -1;",
-            "  }",
-            "",
-            "  @Provides",
-            "  @IntoMap",
-            "  @BoolKey(true) int provideTrueValue() {",
-            "    return 1;",
-            "  }",
-            "}");
-    JavaFileObject mapKey =
-        JavaFileObjects.forSourceLines(
-            "test.BoolKey",
-            "package test;",
-            "",
-            "import dagger.MapKey;",
-            "",
-            "@MapKey",
-            "@interface BoolKey {",
-            "  boolean value() default false;",
-            "}");
-    assertThat(module, mapKey)
-        .processedWith(new ComponentProcessor(), new AutoAnnotationProcessor())
-        .compilesWithoutError();
   }
 }

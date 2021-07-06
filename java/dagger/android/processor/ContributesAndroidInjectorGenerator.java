@@ -16,6 +16,7 @@
 
 package dagger.android.processor;
 
+import static com.google.auto.common.GeneratedAnnotationSpecs.generatedAnnotationSpec;
 import static com.google.common.base.CaseFormat.LOWER_CAMEL;
 import static com.google.common.base.CaseFormat.UPPER_CAMEL;
 import static com.squareup.javapoet.MethodSpec.constructorBuilder;
@@ -28,56 +29,64 @@ import static javax.lang.model.element.Modifier.PUBLIC;
 import static javax.lang.model.element.Modifier.STATIC;
 import static javax.lang.model.util.ElementFilter.methodsIn;
 
-import com.google.auto.common.BasicAnnotationProcessor.ProcessingStep;
+import com.google.auto.common.BasicAnnotationProcessor.Step;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.SetMultimap;
+import com.google.common.collect.ImmutableSetMultimap;
 import com.squareup.javapoet.AnnotationSpec;
 import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
 import com.squareup.javapoet.WildcardTypeName;
-import dagger.Binds;
-import dagger.Module;
-import dagger.Subcomponent;
-import dagger.Subcomponent.Builder;
-import dagger.android.AndroidInjector;
-import dagger.android.ContributesAndroidInjector;
-import dagger.multibindings.IntoMap;
+import dagger.android.processor.AndroidInjectorDescriptor.Validator;
 import java.io.IOException;
-import java.lang.annotation.Annotation;
-import java.util.Set;
 import javax.annotation.processing.Filer;
+import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.util.Elements;
 
-/** Generates the implementation specified in {@link ContributesAndroidInjector}. */
-final class ContributesAndroidInjectorGenerator implements ProcessingStep {
+/** Generates the implementation specified in {@code ContributesAndroidInjector}. */
+final class ContributesAndroidInjectorGenerator implements Step {
 
-  private final Filer filer;
   private final AndroidInjectorDescriptor.Validator validator;
+  private final Filer filer;
+  private final Elements elements;
+  private final boolean useStringKeys;
+  private final SourceVersion sourceVersion;
 
-  ContributesAndroidInjectorGenerator(Filer filer, AndroidInjectorDescriptor.Validator validator) {
-    this.filer = filer;
+  ContributesAndroidInjectorGenerator(
+      Validator validator,
+      boolean useStringKeys,
+      Filer filer,
+      Elements elements,
+      SourceVersion sourceVersion) {
     this.validator = validator;
+    this.useStringKeys = useStringKeys;
+    this.filer = filer;
+    this.elements = elements;
+    this.sourceVersion = sourceVersion;
   }
 
   @Override
-  public Set<? extends Class<? extends Annotation>> annotations() {
-    return ImmutableSet.of(ContributesAndroidInjector.class);
+  public ImmutableSet<String> annotations() {
+    return ImmutableSet.of(TypeNames.CONTRIBUTES_ANDROID_INJECTOR.toString());
   }
 
   @Override
-  public Set<Element> process(
-      SetMultimap<Class<? extends Annotation>, Element> elementsByAnnotation) {
+  public ImmutableSet<Element> process(ImmutableSetMultimap<String, Element> elementsByAnnotation) {
+    ImmutableSet.Builder<Element> deferredElements = ImmutableSet.builder();
     for (ExecutableElement method : methodsIn(elementsByAnnotation.values())) {
-      validator.createIfValid(method).ifPresent(this::generate);
+      try {
+        validator.createIfValid(method).ifPresent(this::generate);
+      } catch (TypeNotPresentException e) {
+        deferredElements.add(method);
+      }
     }
-    return ImmutableSet.of();
+    return deferredElements.build();
   }
 
   private void generate(AndroidInjectorDescriptor descriptor) {
@@ -88,25 +97,28 @@ final class ContributesAndroidInjectorGenerator implements ProcessingStep {
             .peerClass(
                 Joiner.on('_').join(descriptor.enclosingModule().simpleNames())
                     + "_"
-                    + LOWER_CAMEL.to(UPPER_CAMEL, descriptor.methodName()));
+                    + LOWER_CAMEL.to(UPPER_CAMEL, descriptor.method().getSimpleName().toString()));
 
     String baseName = descriptor.injectedType().simpleName();
     ClassName subcomponentName = moduleName.nestedClass(baseName + "Subcomponent");
-    ClassName subcomponentBuilderName = subcomponentName.nestedClass("Builder");
+    ClassName subcomponentFactoryName = subcomponentName.nestedClass("Factory");
 
-    TypeSpec module =
+    TypeSpec.Builder module =
         classBuilder(moduleName)
-            .addModifiers(PUBLIC, ABSTRACT)
+            .addOriginatingElement(descriptor.method())
             .addAnnotation(
-                AnnotationSpec.builder(Module.class)
+                AnnotationSpec.builder(TypeNames.MODULE)
                     .addMember("subcomponents", "$T.class", subcomponentName)
                     .build())
-            .addMethod(bindAndroidInjectorFactory(descriptor, subcomponentBuilderName))
-            .addType(subcomponent(descriptor, subcomponentName, subcomponentBuilderName))
-            .addMethod(constructorBuilder().addModifiers(PRIVATE).build())
-            .build();
+            .addModifiers(PUBLIC, ABSTRACT)
+            .addMethod(bindAndroidInjectorFactory(descriptor, subcomponentFactoryName))
+            .addType(subcomponent(descriptor, subcomponentName, subcomponentFactoryName))
+            .addMethod(constructorBuilder().addModifiers(PRIVATE).build());
+    generatedAnnotationSpec(elements, sourceVersion, AndroidProcessor.class)
+        .ifPresent(module::addAnnotation);
+
     try {
-      JavaFile.builder(moduleName.packageName(), module)
+      JavaFile.builder(moduleName.packageName(), module.build())
           .skipJavaLangImports(true)
           .build()
           .writeTo(filer);
@@ -118,47 +130,55 @@ final class ContributesAndroidInjectorGenerator implements ProcessingStep {
   private MethodSpec bindAndroidInjectorFactory(
       AndroidInjectorDescriptor descriptor, ClassName subcomponentBuilderName) {
     return methodBuilder("bindAndroidInjectorFactory")
-        .addAnnotation(Binds.class)
-        .addAnnotation(IntoMap.class)
-        .addAnnotation(descriptor.mapKeyAnnotation())
+        .addAnnotation(TypeNames.BINDS)
+        .addAnnotation(TypeNames.INTO_MAP)
+        .addAnnotation(androidInjectorMapKey(descriptor))
         .addModifiers(ABSTRACT)
         .returns(
-            parameterizedTypeName(
-                AndroidInjector.Factory.class,
-                WildcardTypeName.subtypeOf(descriptor.frameworkType())))
+            ParameterizedTypeName.get(
+                TypeNames.ANDROID_INJECTOR_FACTORY, WildcardTypeName.subtypeOf(TypeName.OBJECT)))
         .addParameter(subcomponentBuilderName, "builder")
+        .build();
+  }
+
+  private AnnotationSpec androidInjectorMapKey(AndroidInjectorDescriptor descriptor) {
+    if (useStringKeys) {
+      return AnnotationSpec.builder(TypeNames.ANDROID_INJECTION_KEY)
+          .addMember("value", "$S", descriptor.injectedType().toString())
+          .build();
+    }
+    return AnnotationSpec.builder(TypeNames.CLASS_KEY)
+        .addMember("value", "$T.class", descriptor.injectedType())
         .build();
   }
 
   private TypeSpec subcomponent(
       AndroidInjectorDescriptor descriptor,
       ClassName subcomponentName,
-      ClassName subcomponentBuilderName) {
-    AnnotationSpec.Builder subcomponentAnnotation = AnnotationSpec.builder(Subcomponent.class);
+      ClassName subcomponentFactoryName) {
+    AnnotationSpec.Builder subcomponentAnnotation = AnnotationSpec.builder(TypeNames.SUBCOMPONENT);
     for (ClassName module : descriptor.modules()) {
-      subcomponentAnnotation.addMember("modules", CodeBlock.of("$T.class", module));
+      subcomponentAnnotation.addMember("modules", "$T.class", module);
     }
 
     return interfaceBuilder(subcomponentName)
         .addModifiers(PUBLIC)
         .addAnnotation(subcomponentAnnotation.build())
         .addAnnotations(descriptor.scopes())
-        .addSuperinterface(parameterizedTypeName(AndroidInjector.class, descriptor.injectedType()))
-        .addType(subcomponentBuilder(descriptor, subcomponentBuilderName))
+        .addSuperinterface(
+            ParameterizedTypeName.get(TypeNames.ANDROID_INJECTOR, descriptor.injectedType()))
+        .addType(subcomponentFactory(descriptor, subcomponentFactoryName))
         .build();
   }
 
-  private TypeSpec subcomponentBuilder(
-      AndroidInjectorDescriptor descriptor, ClassName subcomponentBuilderName) {
-    return classBuilder(subcomponentBuilderName)
-        .addAnnotation(Builder.class)
-        .addModifiers(PUBLIC, ABSTRACT, STATIC)
-        .superclass(parameterizedTypeName(AndroidInjector.Builder.class, descriptor.injectedType()))
+  private TypeSpec subcomponentFactory(
+      AndroidInjectorDescriptor descriptor, ClassName subcomponentFactoryName) {
+    return interfaceBuilder(subcomponentFactoryName)
+        .addAnnotation(TypeNames.SUBCOMPONENT_FACTORY)
+        .addModifiers(PUBLIC, STATIC)
+        .addSuperinterface(
+            ParameterizedTypeName.get(
+                TypeNames.ANDROID_INJECTOR_FACTORY, descriptor.injectedType()))
         .build();
-  }
-
-  private static ParameterizedTypeName parameterizedTypeName(
-      Class<?> clazz, TypeName... typeArguments) {
-    return ParameterizedTypeName.get(ClassName.get(clazz), typeArguments);
   }
 }

@@ -15,6 +15,8 @@
 # Description:
 #   Functional test code for Dagger-Android
 
+load("//:test_defs.bzl", "GenRobolectricTests")
+
 package(default_visibility = ["//:src"])
 
 android_library(
@@ -23,30 +25,45 @@ android_library(
         ["*.java"],
         exclude = ["*Test.java"],
     ),
+    exports_manifest = 1,
     manifest = "AndroidManifest.xml",
     resource_files = glob(["res/**"]),
     deps = [
+        "@maven//:androidx_activity_activity",
+        "@maven//:androidx_fragment_fragment",
+        "@maven//:androidx_lifecycle_lifecycle_common",
+        "@maven//:androidx_lifecycle_lifecycle_viewmodel",
+        "@maven//:androidx_lifecycle_lifecycle_viewmodel_savedstate",
+        "@maven//:androidx_appcompat_appcompat",
+        "@maven//:androidx_annotation_annotation",
+        "//:dagger_with_compiler",
         "//:android",
         "//:android-support",
-        "//:dagger_with_compiler",
-        "//third_party:guava",
-        "@androidsdk//com.android.support:appcompat-v7-25.0.0",
-        "@androidsdk//com.android.support:support-v4-25.0.0",
+        # TODO(ronshapiro): figure out why strict deps is failing without this
+        "@google_bazel_common//third_party/java/jsr250_annotations",
     ],
 )
-
-load("//:test_defs.bzl", "GenRobolectricTests")
 
 GenRobolectricTests(
     name = "functional_tests",
     srcs = glob(["*Test.java"]),
+    manifest_values = {
+        "minSdkVersion": "14",
+    },
     deps = [
         ":functional",
         "//:android",
         "//:android-support",
         "//:dagger_with_compiler",
-        "//third_party:junit",
-        "//third_party:truth",
-        "@androidsdk//com.android.support:support-v4-25.0.0",
+        "@google_bazel_common//third_party/java/truth",
+        "@maven//:androidx_activity_activity",
+        "@maven//:androidx_fragment_fragment",
+        "@maven//:androidx_lifecycle_lifecycle_common",
+        "@maven//:androidx_lifecycle_lifecycle_viewmodel",
+        "@maven//:androidx_lifecycle_lifecycle_viewmodel_savedstate",
+        "@maven//:androidx_test_core",
+        "@maven//:androidx_test_ext_junit",
+        "@maven//:junit_junit",
+        "@maven//:org_robolectric_robolectric",
     ],
 )

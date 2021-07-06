@@ -12,205 +12,188 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-android_sdk_repository(
-    name = "androidsdk",
-    api_level = 25,
-    build_tools_version = "25.0.2",
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+#############################
+# Load nested repository
+#############################
+
+# Declare the nested workspace so that the top-level workspace doesn't try to
+# traverse it when calling `bazel build //...`
+local_repository(
+    name = "examples_bazel",
+    path = "examples/bazel",
 )
 
-bind(
-    name = "android_sdk_for_testing",
-    actual = "@androidsdk//:files",
+#############################
+# Load Bazel-Common repository
+#############################
+
+http_archive(
+    name = "google_bazel_common",
+    sha256 = "8b6aebdc095c8448b2f6a72bb8eae4a563891467e2d20c943f21940b1c444e38",
+    strip_prefix = "bazel-common-3d0e5005cfcbee836e31695d4ab91b5328ccc506",
+    urls = ["https://github.com/google/bazel-common/archive/3d0e5005cfcbee836e31695d4ab91b5328ccc506.zip"],
 )
 
-maven_jar(
-    name = "javax_annotation_jsr250_api",
-    artifact = "javax.annotation:jsr250-api:1.0",
-    sha1 = "5025422767732a1ab45d93abfea846513d742dcf",
-)
+load("@google_bazel_common//:workspace_defs.bzl", "google_common_workspace_rules")
 
-maven_jar(
-    name = "com_google_code_findbugs_jsr305",
-    artifact = "com.google.code.findbugs:jsr305:3.0.1",
-    sha1 = "f7be08ec23c21485b9b5a1cf1654c2ec8c58168d",
-)
+google_common_workspace_rules()
 
-maven_jar(
-    name = "javax_inject_javax_inject",
-    artifact = "javax.inject:javax.inject:1",
-    sha1 = "6975da39a7040257bd51d21a231b76c915872d38",
-)
+#############################
+# Load Protobuf dependencies
+#############################
 
-maven_jar(
-    name = "javax_inject_javax_inject_tck",
-    artifact = "javax.inject:javax.inject-tck:1",
-    sha1 = "bb0090d50219c265be40fcc8e034dae37fa7be99",
-)
+# rules_python and zlib are required by protobuf.
+# TODO(ronshapiro): Figure out if zlib is in fact necessary, or if proto can depend on the
+# @bazel_tools library directly. See discussion in
+# https://github.com/protocolbuffers/protobuf/pull/5389#issuecomment-481785716
+# TODO(cpovirk): Should we eventually get rules_python from "Bazel Federation?"
+# https://github.com/bazelbuild/rules_python#getting-started
 
-maven_jar(
-    name = "com_google_guava_guava",
-    artifact = "com.google.guava:guava:21.0",
-    sha1 = "3a3d111be1be1b745edfa7d91678a12d7ed38709",
-)
-
-maven_jar(
-    name = "com_google_guava_guava_testlib",
-    artifact = "com.google.guava:guava-testlib:21.0-rc1",
-    sha1 = "13f0f0dce4e710bb0bb791bd07f6e9858670a865",
-)
-
-maven_jar(
-    name = "com_google_errorprone_javac",
-    artifact = "com.google.errorprone:javac:9-dev-r3297-1-shaded",
-    sha1 = "0f6d4998965282068a3feecddc21578d23f17275",
-)
-
-maven_jar(
-    name = "com_google_googlejavaformat_google_java_format",
-    artifact = "com.google.googlejavaformat:google-java-format:1.3",
-    sha1 = "949e85e75b3160ce1446aa99d806d5b509631b02",
-)
-
-maven_jar(
-    name = "com_google_auto_auto_common",
-    artifact = "com.google.auto:auto-common:0.8",
-    sha1 = "c6f7af0e57b9d69d81b05434ef9f3c5610d498c4",
-)
-
-maven_jar(
-    name = "com_google_auto_factory_auto_factory",
-    artifact = "com.google.auto.factory:auto-factory:1.0-beta3",
-    sha1 = "99b2ffe0e41abbd4cc42bf3836276e7174c4929d",
-)
-
-maven_jar(
-    name = "com_squareup_javawriter",
-    artifact = "com.squareup:javawriter:2.5.1",
-    sha1 = "54c87b3d91238e5b58e1a436d4916eee680ec959",
-)
-
-maven_jar(
-    name = "com_google_auto_service_auto_service",
-    artifact = "com.google.auto.service:auto-service:1.0-rc2",
-    sha1 = "51033a5b8fcf7039159e35b6878f106ccd5fb35f",
-)
-
-maven_jar(
-    name = "com_google_auto_value_auto_value",
-    artifact = "com.google.auto.value:auto-value:1.4-rc1",
-    sha1 = "9347939002003a7a3c3af48271fc2c18734528a4",
-)
-
-maven_jar(
-    name = "com_google_errorprone_error_prone_annotations",
-    artifact = "com.google.errorprone:error_prone_annotations:2.0.12",
-    sha1 = "8530d22d4ae8419e799d5a5234e0d2c0dcf15d4b",
-)
-
-maven_jar(
-    name = "junit_junit",
-    artifact = "junit:junit:4.11",
-    sha1 = "4e031bb61df09069aeb2bffb4019e7a5034a4ee0",
-)
-
-maven_jar(
-    name = "com_google_testing_compile_compile_testing",
-    artifact = "com.google.testing.compile:compile-testing:0.10",
-    sha1 = "51e6189be9d2861d1eb22b4009c8f3430319490c",
-)
-
-maven_jar(
-    name = "org_mockito_mockito_core",
-    artifact = "org.mockito:mockito-core:1.9.5",
-    sha1 = "c3264abeea62c4d2f367e21484fbb40c7e256393",
-)
-
-maven_jar(
-    name = "org_hamcrest_hamcrest_core",
-    artifact = "org.hamcrest:hamcrest-core:1.3",
-    sha1 = "42a25dc3219429f0e5d060061f71acb49bf010a0",
-)
-
-maven_jar(
-    name = "org_objenesis_objenesis",
-    artifact = "org.objenesis:objenesis:1.0",
-    sha1 = "9b473564e792c2bdf1449da1f0b1b5bff9805704",
-)
-
-maven_jar(
-    name = "com_google_truth_truth",
-    artifact = "com.google.truth:truth:0.30",
-    sha1 = "9d591b5a66eda81f0b88cf1c748ab8853d99b18b",
-)
-
-maven_jar(
-    name = "com_google_truth_extensions_truth_java8_extension",
-    artifact = "com.google.truth.extensions:truth-java8-extension:0.30",
-    sha1 = "f3bb5e49001a9b575bcdef9aa8417b6d1ef35509",
-)
-
-maven_jar(
-    name = "com_squareup_javapoet",
-    artifact = "com.squareup:javapoet:1.7.0",
-    sha1 = "4fdcf1fc27c1a8f55d1109df986c923152f07759",
-)
-
-maven_jar(
-    name = "io_grpc_grpc_core",
-    artifact = "io.grpc:grpc-core:1.2.0",
-    sha1 = "f12a213e2b59a0615df2cc9bed35dc15fd2fee37",
-)
-
-maven_jar(
-    name = "io_grpc_grpc_netty",
-    artifact = "io.grpc:grpc-netty:1.2.0",
-    sha1 = "e2682d2dc052898f87433e7a6d03d104ef98df74",
-)
-
-maven_jar(
-    name = "io_grpc_grpc_context",
-    artifact = "io.grpc:grpc-context:1.2.0",
-    sha1 = "1932db544cbb427bc18f902c7ebbb3f7e44991df",
-)
-
-maven_jar(
-    name = "io_grpc_grpc_protobuf",
-    artifact = "io.grpc:grpc-protobuf:1.2.0",
-    sha1 = "2676852d2dbd20155d9b1a940a456eae5b7445f0",
-)
-
-maven_jar(
-    name = "io_grpc_grpc_stub",
-    artifact = "io.grpc:grpc-stub:1.2.0",
-    sha1 = "964dda53b3085bfd17c7aaf51495f9efc8bda36c",
-)
-
-maven_jar(
-    name = "io_grpc_grpc_all",
-    artifact = "io.grpc:grpc-all:1.2.0",
-    sha1 = "f32006a1245dfa2d68bf92a1b4cc01831889c95b",
-)
-
-maven_jar(
-    name = "com_google_protobuf_protobuf_java",
-    artifact = "com.google.protobuf:protobuf-java:3.2.0",
-    sha1 = "62ccf171a106ff6791507f2d5364c275f9a3131d",
+http_archive(
+    name = "rules_python",
+    sha256 = "e5470e92a18aa51830db99a4d9c492cc613761d5bdb7131c04bd92b9834380f6",
+    strip_prefix = "rules_python-4b84ad270387a7c439ebdccfd530e2339601ef27",
+    urls = ["https://github.com/bazelbuild/rules_python/archive/4b84ad270387a7c439ebdccfd530e2339601ef27.tar.gz"],
 )
 
 http_archive(
-    name = "com_google_protobuf",
-    sha256 = "ff771a662fb6bd4d3cc209bcccedef3e93980a49f71df1e987f6afa3bcdcba3a",
-    strip_prefix = "protobuf-b4b0e304be5a68de3d0ee1af9b286f958750f5e4",
-    urls = ["https://github.com/google/protobuf/archive/b4b0e304be5a68de3d0ee1af9b286f958750f5e4.zip"],
+    name = "zlib",
+    build_file = "@com_google_protobuf//:third_party/zlib.BUILD",
+    sha256 = "629380c90a77b964d896ed37163f5c3a34f6e6d897311f1df2a7016355c45eff",
+    strip_prefix = "zlib-1.2.11",
+    urls = ["https://github.com/madler/zlib/archive/v1.2.11.tar.gz"],
 )
+
+#############################
+# Load Robolectric repository
+#############################
+
+ROBOLECTRIC_VERSION = "4.4"
 
 http_archive(
-    name = "com_google_protobuf_java",
-    sha256 = "ff771a662fb6bd4d3cc209bcccedef3e93980a49f71df1e987f6afa3bcdcba3a",
-    strip_prefix = "protobuf-b4b0e304be5a68de3d0ee1af9b286f958750f5e4",
-    urls = ["https://github.com/google/protobuf/archive/b4b0e304be5a68de3d0ee1af9b286f958750f5e4.zip"],
+    name = "robolectric",
+    sha256 = "d4f2eb078a51f4e534ebf5e18b6cd4646d05eae9b362ac40b93831bdf46112c7",
+    strip_prefix = "robolectric-bazel-%s" % ROBOLECTRIC_VERSION,
+    urls = ["https://github.com/robolectric/robolectric-bazel/archive/%s.tar.gz" % ROBOLECTRIC_VERSION],
 )
 
-load("//tools:jarjar.bzl", "jarjar_deps")
+load("@robolectric//bazel:robolectric.bzl", "robolectric_repositories")
 
-jarjar_deps()
+robolectric_repositories()
+
+#############################
+# Load Kotlin repository
+#############################
+
+RULES_KOTLIN_COMMIT = "2c283821911439e244285b5bfec39148e7d90e21"
+
+RULES_KOTLIN_SHA = "b04cd539e7e3571745179da95069586b6fa76a64306b24bb286154e652010608"
+
+http_archive(
+    name = "io_bazel_rules_kotlin",
+    sha256 = RULES_KOTLIN_SHA,
+    strip_prefix = "rules_kotlin-%s" % RULES_KOTLIN_COMMIT,
+    type = "zip",
+    urls = ["https://github.com/bazelbuild/rules_kotlin/archive/%s.zip" % RULES_KOTLIN_COMMIT],
+)
+
+load("@io_bazel_rules_kotlin//kotlin:dependencies.bzl", "kt_download_local_dev_dependencies")
+
+kt_download_local_dev_dependencies()
+
+load("@io_bazel_rules_kotlin//kotlin:kotlin.bzl", "kotlin_repositories")
+
+KOTLIN_VERSION = "1.4.20"
+
+KOTLINC_RELEASE_SHA = "11db93a4d6789e3406c7f60b9f267eba26d6483dcd771eff9f85bb7e9837011f"
+
+KOTLINC_RELEASE = {
+    "sha256": KOTLINC_RELEASE_SHA,
+    "urls": ["https://github.com/JetBrains/kotlin/releases/download/v{v}/kotlin-compiler-{v}.zip".format(v = KOTLIN_VERSION)],
+}
+
+kotlin_repositories(compiler_release = KOTLINC_RELEASE)
+
+register_toolchains("//:kotlin_toolchain")
+
+#############################
+# Load Maven dependencies
+#############################
+
+RULES_JVM_EXTERNAL_TAG = "2.7"
+
+RULES_JVM_EXTERNAL_SHA = "f04b1466a00a2845106801e0c5cec96841f49ea4e7d1df88dc8e4bf31523df74"
+
+http_archive(
+    name = "rules_jvm_external",
+    sha256 = RULES_JVM_EXTERNAL_SHA,
+    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
+    url = "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_TAG,
+)
+
+load("@rules_jvm_external//:defs.bzl", "maven_install")
+
+ANDROID_LINT_VERSION = "26.6.2"
+
+maven_install(
+    artifacts = [
+        "androidx.annotation:annotation:1.1.0",
+        "androidx.appcompat:appcompat:1.2.0",
+        "androidx.activity:activity:1.2.2",
+        "androidx.fragment:fragment:1.3.2",
+        "androidx.lifecycle:lifecycle-common:2.3.1",
+        "androidx.lifecycle:lifecycle-viewmodel:2.3.1",
+        "androidx.lifecycle:lifecycle-viewmodel-savedstate:2.3.1",
+        "androidx.multidex:multidex:2.0.1",
+        "androidx.savedstate:savedstate:1.0.0",
+        "androidx.test:monitor:1.1.1",
+        "androidx.test:core:1.1.0",
+        "androidx.test.ext:junit:1.1.2",
+        "com.android.support:appcompat-v7:25.0.0",
+        "com.android.support:support-annotations:25.0.0",
+        "com.android.support:support-fragment:25.0.0",
+        "com.android.tools.external.org-jetbrains:uast:%s" % ANDROID_LINT_VERSION,
+        "com.android.tools.external.com-intellij:intellij-core:%s" % ANDROID_LINT_VERSION,
+        "com.android.tools.external.com-intellij:kotlin-compiler:%s" % ANDROID_LINT_VERSION,
+        "com.android.tools.lint:lint:%s" % ANDROID_LINT_VERSION,
+        "com.android.tools.lint:lint-api:%s" % ANDROID_LINT_VERSION,
+        "com.android.tools.lint:lint-checks:%s" % ANDROID_LINT_VERSION,
+        "com.android.tools.lint:lint-tests:%s" % ANDROID_LINT_VERSION,
+        "com.android.tools:testutils:%s" % ANDROID_LINT_VERSION,
+        "com.github.tschuchortdev:kotlin-compile-testing:1.2.8",
+        "com.google.devtools.ksp:symbol-processing-api:1.5.20-1.0.0-beta03",
+        "com.google.guava:guava:27.1-android",
+        "junit:junit:4.13",
+        "org.jetbrains.kotlin:kotlin-stdlib:%s" % KOTLIN_VERSION,
+        "org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.3.0",
+        "org.robolectric:robolectric:4.4",
+        "org.robolectric:shadows-framework:4.4",  # For ActivityController
+    ],
+    repositories = [
+        "https://repo1.maven.org/maven2",
+        "https://maven.google.com",
+        "https://jcenter.bintray.com/",  # Lint has one trove4j dependency in jCenter
+    ],
+)
+
+#############################
+# Load Bazel Skylib rules
+#############################
+
+BAZEL_SKYLIB_VERSION = "1.0.2"
+
+BAZEL_SKYLIB_SHA = "97e70364e9249702246c0e9444bccdc4b847bed1eb03c5a3ece4f83dfe6abc44"
+
+http_archive(
+    name = "bazel_skylib",
+    sha256 = BAZEL_SKYLIB_SHA,
+    urls = [
+        "https://github.com/bazelbuild/bazel-skylib/releases/download/{version}/bazel-skylib-{version}.tar.gz".format(version = BAZEL_SKYLIB_VERSION),
+    ],
+)
+
+load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
+
+bazel_skylib_workspace()

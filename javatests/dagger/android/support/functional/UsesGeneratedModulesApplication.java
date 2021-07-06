@@ -21,9 +21,9 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 import dagger.Component;
 import dagger.Module;
 import dagger.Provides;
+import dagger.android.AndroidInjectionModule;
 import dagger.android.AndroidInjector;
 import dagger.android.ContributesAndroidInjector;
-import dagger.android.support.AndroidSupportInjectionModule;
 import dagger.android.support.DaggerApplication;
 import dagger.multibindings.IntoSet;
 import java.lang.annotation.Retention;
@@ -37,7 +37,7 @@ public final class UsesGeneratedModulesApplication extends DaggerApplication {
     return DaggerUsesGeneratedModulesApplication_ApplicationComponent.create();
   }
 
-  @Component(modules = {ApplicationModule.class, AndroidSupportInjectionModule.class})
+  @Component(modules = {ApplicationModule.class, AndroidInjectionModule.class})
   interface ApplicationComponent extends AndroidInjector<UsesGeneratedModulesApplication> {}
 
   @Module
@@ -55,11 +55,17 @@ public final class UsesGeneratedModulesApplication extends DaggerApplication {
     @ContributesAndroidInjector(modules = DummyActivitySubcomponent.AddToHierarchy.class)
     abstract TestActivity contributeTestActivityInjector();
 
+    @ContributesAndroidInjector(modules = DummyInnerActivitySubcomponent.AddToHierarchy.class)
+    abstract OuterClass.TestInnerClassActivity contributeInnerActivityInjector();
+
     @ContributesAndroidInjector(modules = DummyParentFragmentSubcomponent.AddToHierarchy.class)
     abstract TestParentFragment contributeTestParentFragmentInjector();
 
     @ContributesAndroidInjector(modules = DummyChildFragmentSubcomponent.AddToHierarchy.class)
     abstract TestChildFragment contributeTestChildFragmentInjector();
+
+    @ContributesAndroidInjector(modules = DummyDialogFragmentSubcomponent.AddToHierarchy.class)
+    abstract TestDialogFragment contributeTestDialogFragmentInjector();
 
     @ContributesAndroidInjector(modules = DummyServiceSubcomponent.AddToHierarchy.class)
     abstract TestService contributeTestServiceInjector();
@@ -98,6 +104,17 @@ public final class UsesGeneratedModulesApplication extends DaggerApplication {
     }
   }
 
+  interface DummyInnerActivitySubcomponent {
+    @Module
+    abstract class AddToHierarchy {
+      @Provides
+      @IntoSet
+      static Class<?> addDummyValueToComponentHierarchy() {
+        return DummyInnerActivitySubcomponent.class;
+      }
+    }
+  }
+
   interface DummyParentFragmentSubcomponent {
     @Module
     abstract class AddToHierarchy {
@@ -116,6 +133,17 @@ public final class UsesGeneratedModulesApplication extends DaggerApplication {
       @IntoSet
       static Class<?> addDummyValueToComponentHierarchy() {
         return DummyChildFragmentSubcomponent.class;
+      }
+    }
+  }
+
+  interface DummyDialogFragmentSubcomponent {
+    @Module
+    abstract class AddToHierarchy {
+      @Provides
+      @IntoSet
+      static Class<?> addDummyValueToComponentHierarchy() {
+        return DummyDialogFragmentSubcomponent.class;
       }
     }
   }

@@ -17,7 +17,8 @@
 package dagger.producers.monitoring.internal;
 
 import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -60,7 +61,7 @@ public final class MonitorsTest {
     ProductionComponentMonitor.Factory factory =
         Monitors.delegatingProductionComponentMonitorFactory(
             ImmutableList.<ProductionComponentMonitor.Factory>of());
-    assertThat(factory).isSameAs(ProductionComponentMonitor.Factory.noOp());
+    assertThat(factory).isSameInstanceAs(ProductionComponentMonitor.Factory.noOp());
   }
 
   @Test
@@ -69,7 +70,7 @@ public final class MonitorsTest {
     ProductionComponentMonitor.Factory factory =
         Monitors.delegatingProductionComponentMonitorFactory(
             ImmutableList.of(mockProductionComponentMonitorFactory));
-    assertThat(factory.create(new Object())).isSameAs(ProductionComponentMonitor.noOp());
+    assertThat(factory.create(new Object())).isSameInstanceAs(ProductionComponentMonitor.noOp());
   }
 
   @Test
@@ -80,21 +81,21 @@ public final class MonitorsTest {
     ProductionComponentMonitor.Factory factory =
         Monitors.delegatingProductionComponentMonitorFactory(
             ImmutableList.of(mockProductionComponentMonitorFactory));
-    assertThat(factory.create(new Object())).isSameAs(ProductionComponentMonitor.noOp());
+    assertThat(factory.create(new Object())).isSameInstanceAs(ProductionComponentMonitor.noOp());
   }
 
   @Test
   public void singleMonitor_nullProducerMonitor() {
     when(mockProductionComponentMonitorFactory.create(any(Object.class)))
         .thenReturn(mockProductionComponentMonitor);
-    when(mockProductionComponentMonitor.producerMonitorFor(any(ProducerToken.class)))
+    when(mockProductionComponentMonitor.producerMonitorFor(nullable(ProducerToken.class)))
         .thenReturn(null);
     ProductionComponentMonitor.Factory factory =
         Monitors.delegatingProductionComponentMonitorFactory(
             ImmutableList.of(mockProductionComponentMonitorFactory));
     ProductionComponentMonitor monitor = factory.create(new Object());
     assertThat(monitor.producerMonitorFor(ProducerToken.create(Object.class)))
-        .isSameAs(ProducerMonitor.noOp());
+        .isSameInstanceAs(ProducerMonitor.noOp());
   }
 
   @Test
@@ -103,13 +104,13 @@ public final class MonitorsTest {
         .thenReturn(mockProductionComponentMonitor);
     doThrow(new RuntimeException("monkey"))
         .when(mockProductionComponentMonitor)
-        .producerMonitorFor(any(ProducerToken.class));
+        .producerMonitorFor(nullable(ProducerToken.class));
     ProductionComponentMonitor.Factory factory =
         Monitors.delegatingProductionComponentMonitorFactory(
             ImmutableList.of(mockProductionComponentMonitorFactory));
     ProductionComponentMonitor monitor = factory.create(new Object());
     assertThat(monitor.producerMonitorFor(ProducerToken.create(Object.class)))
-        .isSameAs(ProducerMonitor.noOp());
+        .isSameInstanceAs(ProducerMonitor.noOp());
   }
 
   @Test
@@ -164,7 +165,9 @@ public final class MonitorsTest {
     doThrow(new RuntimeException("monkey")).when(mockProducerMonitor).requested();
     doThrow(new RuntimeException("monkey")).when(mockProducerMonitor).methodStarting();
     doThrow(new RuntimeException("monkey")).when(mockProducerMonitor).methodFinished();
-    doThrow(new RuntimeException("monkey")).when(mockProducerMonitor).succeeded(any(Object.class));
+    doThrow(new RuntimeException("monkey"))
+        .when(mockProducerMonitor)
+        .succeeded(nullable(Object.class));
     ProductionComponentMonitor.Factory factory =
         Monitors.delegatingProductionComponentMonitorFactory(
             ImmutableList.of(mockProductionComponentMonitorFactory));
@@ -223,7 +226,7 @@ public final class MonitorsTest {
                 mockProductionComponentMonitorFactoryA,
                 mockProductionComponentMonitorFactoryB,
                 mockProductionComponentMonitorFactoryC));
-    assertThat(factory.create(new Object())).isSameAs(ProductionComponentMonitor.noOp());
+    assertThat(factory.create(new Object())).isSameInstanceAs(ProductionComponentMonitor.noOp());
   }
 
   @Test
@@ -243,7 +246,7 @@ public final class MonitorsTest {
                 mockProductionComponentMonitorFactoryA,
                 mockProductionComponentMonitorFactoryB,
                 mockProductionComponentMonitorFactoryC));
-    assertThat(factory.create(new Object())).isSameAs(ProductionComponentMonitor.noOp());
+    assertThat(factory.create(new Object())).isSameInstanceAs(ProductionComponentMonitor.noOp());
   }
 
   @Test
@@ -252,7 +255,7 @@ public final class MonitorsTest {
         .thenReturn(mockProductionComponentMonitorA);
     when(mockProductionComponentMonitorFactoryB.create(any(Object.class))).thenReturn(null);
     when(mockProductionComponentMonitorFactoryC.create(any(Object.class))).thenReturn(null);
-    when(mockProductionComponentMonitorA.producerMonitorFor(any(ProducerToken.class)))
+    when(mockProductionComponentMonitorA.producerMonitorFor(nullable(ProducerToken.class)))
         .thenReturn(mockProducerMonitorA);
     ProductionComponentMonitor.Factory factory =
         Monitors.delegatingProductionComponentMonitorFactory(
@@ -288,7 +291,7 @@ public final class MonitorsTest {
     doThrow(new RuntimeException("monkey"))
         .when(mockProductionComponentMonitorFactoryC)
         .create(any(Object.class));
-    when(mockProductionComponentMonitorA.producerMonitorFor(any(ProducerToken.class)))
+    when(mockProductionComponentMonitorA.producerMonitorFor(nullable(ProducerToken.class)))
         .thenReturn(mockProducerMonitorA);
     ProductionComponentMonitor.Factory factory =
         Monitors.delegatingProductionComponentMonitorFactory(
@@ -390,7 +393,9 @@ public final class MonitorsTest {
     doThrow(new RuntimeException("monkey")).when(mockProducerMonitorA).requested();
     doThrow(new RuntimeException("monkey")).when(mockProducerMonitorA).methodStarting();
     doThrow(new RuntimeException("monkey")).when(mockProducerMonitorB).methodFinished();
-    doThrow(new RuntimeException("monkey")).when(mockProducerMonitorC).succeeded(any(Object.class));
+    doThrow(new RuntimeException("monkey"))
+        .when(mockProducerMonitorC)
+        .succeeded(nullable(Object.class));
     ProductionComponentMonitor.Factory factory =
         Monitors.delegatingProductionComponentMonitorFactory(
             ImmutableList.of(
@@ -465,7 +470,7 @@ public final class MonitorsTest {
   private void setUpNormalSingleMonitor() {
     when(mockProductionComponentMonitorFactory.create(any(Object.class)))
         .thenReturn(mockProductionComponentMonitor);
-    when(mockProductionComponentMonitor.producerMonitorFor(any(ProducerToken.class)))
+    when(mockProductionComponentMonitor.producerMonitorFor(nullable(ProducerToken.class)))
         .thenReturn(mockProducerMonitor);
   }
 
@@ -476,11 +481,11 @@ public final class MonitorsTest {
         .thenReturn(mockProductionComponentMonitorB);
     when(mockProductionComponentMonitorFactoryC.create(any(Object.class)))
         .thenReturn(mockProductionComponentMonitorC);
-    when(mockProductionComponentMonitorA.producerMonitorFor(any(ProducerToken.class)))
+    when(mockProductionComponentMonitorA.producerMonitorFor(nullable(ProducerToken.class)))
         .thenReturn(mockProducerMonitorA);
-    when(mockProductionComponentMonitorB.producerMonitorFor(any(ProducerToken.class)))
+    when(mockProductionComponentMonitorB.producerMonitorFor(nullable(ProducerToken.class)))
         .thenReturn(mockProducerMonitorB);
-    when(mockProductionComponentMonitorC.producerMonitorFor(any(ProducerToken.class)))
+    when(mockProductionComponentMonitorC.producerMonitorFor(nullable(ProducerToken.class)))
         .thenReturn(mockProducerMonitorC);
   }
 }

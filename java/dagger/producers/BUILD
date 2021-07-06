@@ -15,49 +15,65 @@
 # Description:
 #   An asynchronous dependency injection system that extends JSR-330.
 
-package(default_visibility = ["//:src"])
-
+load("@rules_java//java:defs.bzl", "java_library")
 load(
     "//:build_defs.bzl",
     "DOCLINT_HTML_AND_SYNTAX",
     "DOCLINT_REFERENCES",
+    "POM_VERSION",
     "SOURCE_7_TARGET_7",
 )
+load("//tools:maven.bzl", "gen_maven_artifact")
+
+package(default_visibility = ["//:src"])
+
+# Work around b/70476182 which prevents Kythe from connecting :producers to the .java files it
+# contains.
+SRCS = glob(["**/*.java"])
 
 filegroup(
     name = "producers-srcs",
-    srcs = glob(["**/*.java"]),
+    srcs = SRCS,
 )
 
 java_library(
     name = "producers",
-    srcs = [":producers-srcs"],
+    srcs = SRCS,
     javacopts = SOURCE_7_TARGET_7 + DOCLINT_HTML_AND_SYNTAX + DOCLINT_REFERENCES,
-    plugins = [
-        # TODO(cgruber): Enable Beta checker.
-    ],
+    tags = ["maven_coordinates=com.google.dagger:dagger-producers:" + POM_VERSION],
     exports = [
-        # TODO(dpb): Don't export any of Guava.
-        "//third_party:guava",
-        "//third_party:jsr330_inject",
+        "//java/dagger/internal/guava:base",
+        "//java/dagger/internal/guava:concurrent",
+        "@google_bazel_common//third_party/java/jsr330_inject",
     ],
     deps = [
         "//java/dagger:core",
-        "//third_party:guava",
-        "//third_party:jsr305_annotations",
-        "//third_party:jsr330_inject",
+        "//java/dagger/internal/guava:base",
+        "//java/dagger/internal/guava:collect",
+        "//java/dagger/internal/guava:concurrent",
+        "@google_bazel_common//third_party/java/checker_framework_annotations",
+        "@google_bazel_common//third_party/java/error_prone:annotations",
+        "@google_bazel_common//third_party/java/jsr330_inject",
     ],
 )
 
-load("//tools:javadoc.bzl", "javadoc_library")
-
-javadoc_library(
-    name = "producers-javadoc",
-    srcs = [":producers-srcs"],
-    exclude_packages = [
+gen_maven_artifact(
+    name = "artifact",
+    artifact_coordinates = "com.google.dagger:dagger-producers:" + POM_VERSION,
+    artifact_name = "Dagger Producers",
+    artifact_target = ":producers",
+    artifact_target_maven_deps = [
+        "com.google.dagger:dagger",
+        "com.google.guava:failureaccess",
+        "com.google.guava:guava",  # TODO(bcorso): Remove guava dependency and ban it?
+        "javax.inject:javax.inject",
+        "org.checkerframework:checker-compat-qual",
+    ],
+    javadoc_exclude_packages = [
         "dagger.producers.internal",
         "dagger.producers.monitoring.internal",
     ],
-    root_packages = ["dagger.producers"],
-    deps = [":producers"],
+    javadoc_root_packages = ["dagger.producers"],
+    javadoc_srcs = SRCS,
+    # TODO(bcorso): Look more into why auto/common shading isn't needed here.
 )

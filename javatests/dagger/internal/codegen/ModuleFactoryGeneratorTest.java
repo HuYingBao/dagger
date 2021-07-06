@@ -1,3 +1,4 @@
+
 /*
  * Copyright (C) 2014 The Dagger Authors.
  *
@@ -17,30 +18,16 @@
 package dagger.internal.codegen;
 
 import static com.google.common.truth.Truth.assertAbout;
+import static com.google.testing.compile.CompilationSubject.assertThat;
 import static com.google.testing.compile.JavaSourceSubjectFactory.javaSource;
-import static com.google.testing.compile.JavaSourcesSubject.assertThat;
 import static com.google.testing.compile.JavaSourcesSubjectFactory.javaSources;
+import static dagger.internal.codegen.Compilers.daggerCompiler;
 import static dagger.internal.codegen.DaggerModuleMethodSubject.Factory.assertThatMethodInUnannotatedClass;
 import static dagger.internal.codegen.DaggerModuleMethodSubject.Factory.assertThatModuleMethod;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_ABSTRACT;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_MULTIPLE_QUALIFIERS;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_MUST_NOT_BIND_FRAMEWORK_TYPES;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_MUST_RETURN_A_VALUE;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_NOT_IN_MODULE;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_PRIVATE;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_RETURN_TYPE;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_SET_VALUES_RAW_SET;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_SET_VALUES_RETURN_SET;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_THROWS_CHECKED;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_TYPE_PARAMETER;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_WITH_SAME_NAME;
-import static dagger.internal.codegen.ErrorMessages.MODULES_WITH_TYPE_PARAMS_MUST_BE_ABSTRACT;
-import static dagger.internal.codegen.GeneratedLines.GENERATED_ANNOTATION;
 
 import com.google.common.collect.ImmutableList;
-import com.google.testing.compile.CompileTester;
+import com.google.testing.compile.Compilation;
 import com.google.testing.compile.JavaFileObjects;
-import com.squareup.javapoet.CodeBlock;
 import javax.tools.JavaFileObject;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -53,89 +40,80 @@ public class ModuleFactoryGeneratorTest {
       JavaFileObjects.forSourceLines(
           "test.Nullable", "package test;", "public @interface Nullable {}");
 
-  private static final CodeBlock NPE_LITERAL =
-      CodeBlocks.stringLiteral(ErrorMessages.CANNOT_RETURN_NULL_FROM_NON_NULLABLE_PROVIDES_METHOD);
-
   // TODO(gak): add tests for invalid combinations of scope and qualifier annotations like we have
   // for @Inject
 
-  private String formatErrorMessage(String msg) {
-    return String.format(msg, "Provides");
-  }
-
-  private String formatModuleErrorMessage(String msg) {
-    return String.format(msg, "Provides", "Module");
-  }
-
   @Test public void providesMethodNotInModule() {
     assertThatMethodInUnannotatedClass("@Provides String provideString() { return null; }")
-        .hasError(formatModuleErrorMessage(BINDING_METHOD_NOT_IN_MODULE));
+        .hasError("@Provides methods can only be present within a @Module or @ProducerModule");
   }
 
   @Test public void providesMethodAbstract() {
     assertThatModuleMethod("@Provides abstract String abstractMethod();")
-        .hasError(formatErrorMessage(BINDING_METHOD_ABSTRACT));
+        .hasError("@Provides methods cannot be abstract");
   }
 
   @Test public void providesMethodPrivate() {
     assertThatModuleMethod("@Provides private String privateMethod() { return null; }")
-        .hasError(formatErrorMessage(BINDING_METHOD_PRIVATE));
+        .hasError("@Provides methods cannot be private");
   }
 
   @Test public void providesMethodReturnVoid() {
     assertThatModuleMethod("@Provides void voidMethod() {}")
-        .hasError(formatErrorMessage(BINDING_METHOD_MUST_RETURN_A_VALUE));
+        .hasError("@Provides methods must return a value (not void)");
   }
 
   @Test
   public void providesMethodReturnsProvider() {
     assertThatModuleMethod("@Provides Provider<String> provideProvider() {}")
-        .hasError(formatErrorMessage(BINDING_METHOD_MUST_NOT_BIND_FRAMEWORK_TYPES));
+        .hasError("@Provides methods must not return framework types");
   }
 
   @Test
   public void providesMethodReturnsLazy() {
     assertThatModuleMethod("@Provides Lazy<String> provideLazy() {}")
-        .hasError(formatErrorMessage(BINDING_METHOD_MUST_NOT_BIND_FRAMEWORK_TYPES));
+        .hasError("@Provides methods must not return framework types");
   }
 
   @Test
   public void providesMethodReturnsMembersInjector() {
     assertThatModuleMethod("@Provides MembersInjector<String> provideMembersInjector() {}")
-        .hasError(formatErrorMessage(BINDING_METHOD_MUST_NOT_BIND_FRAMEWORK_TYPES));
+        .hasError("@Provides methods must not return framework types");
   }
 
   @Test
   public void providesMethodReturnsProducer() {
     assertThatModuleMethod("@Provides Producer<String> provideProducer() {}")
-        .hasError(formatErrorMessage(BINDING_METHOD_MUST_NOT_BIND_FRAMEWORK_TYPES));
+        .hasError("@Provides methods must not return framework types");
   }
 
   @Test
   public void providesMethodReturnsProduced() {
     assertThatModuleMethod("@Provides Produced<String> provideProduced() {}")
-        .hasError(formatErrorMessage(BINDING_METHOD_MUST_NOT_BIND_FRAMEWORK_TYPES));
+        .hasError("@Provides methods must not return framework types");
   }
 
   @Test public void providesMethodWithTypeParameter() {
     assertThatModuleMethod("@Provides <T> String typeParameter() { return null; }")
-        .hasError(formatErrorMessage(BINDING_METHOD_TYPE_PARAMETER));
+        .hasError("@Provides methods may not have type parameters");
   }
 
   @Test public void providesMethodSetValuesWildcard() {
     assertThatModuleMethod("@Provides @ElementsIntoSet Set<?> provideWildcard() { return null; }")
-        .hasError(formatErrorMessage(BINDING_METHOD_RETURN_TYPE));
+        .hasError(
+            "@Provides methods must return a primitive, an array, a type variable, "
+                + "or a declared type");
   }
 
   @Test public void providesMethodSetValuesRawSet() {
     assertThatModuleMethod("@Provides @ElementsIntoSet Set provideSomething() { return null; }")
-        .hasError(formatErrorMessage(BINDING_METHOD_SET_VALUES_RAW_SET));
+        .hasError("@Provides methods annotated with @ElementsIntoSet cannot return a raw Set");
   }
 
   @Test public void providesMethodSetValuesNotASet() {
     assertThatModuleMethod(
             "@Provides @ElementsIntoSet List<String> provideStrings() { return null; }")
-        .hasError(formatErrorMessage(BINDING_METHOD_SET_VALUES_RETURN_SET));
+        .hasError("@Provides methods annotated with @ElementsIntoSet must return a Set");
   }
 
   @Test public void modulesWithTypeParamsMustBeAbstract() {
@@ -146,12 +124,11 @@ public class ModuleFactoryGeneratorTest {
         "",
         "@Module",
         "final class TestModule<A> {}");
-    assertAbout(javaSource())
-        .that(moduleFile)
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining(MODULES_WITH_TYPE_PARAMS_MUST_BE_ABSTRACT)
-        .in(moduleFile)
+    Compilation compilation = daggerCompiler().compile(moduleFile);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("Modules with type parameters must be abstract")
+        .inFile(moduleFile)
         .onLine(6);
   }
 
@@ -170,10 +147,8 @@ public class ModuleFactoryGeneratorTest {
         .withDeclaration("@Module class %s extends Parent { %s }")
         .withAdditionalSources(parent)
         .hasError(
-            String.format(
-                ErrorMessages.METHOD_OVERRIDES_PROVIDES_METHOD,
-                "Provides",
-                "@Provides String test.Parent.foo()"));
+            "Binding methods may not be overridden in modules. Overrides: "
+                + "@Provides String test.Parent.foo()");
   }
 
   @Test public void provideOverriddenByProvide() {
@@ -191,10 +166,8 @@ public class ModuleFactoryGeneratorTest {
         .withDeclaration("@Module class %s extends Parent { %s }")
         .withAdditionalSources(parent)
         .hasError(
-            String.format(
-                ErrorMessages.PROVIDES_METHOD_OVERRIDES_ANOTHER,
-                "Provides",
-                "@Provides String test.Parent.foo()"));
+            "Binding methods may not override another method. Overrides: "
+                + "@Provides String test.Parent.foo()");
   }
 
   @Test public void providesOverridesNonProvides() {
@@ -211,10 +184,8 @@ public class ModuleFactoryGeneratorTest {
         .withDeclaration("@Module class %s extends Parent { %s }")
         .withAdditionalSources(parent)
         .hasError(
-            String.format(
-                ErrorMessages.PROVIDES_METHOD_OVERRIDES_ANOTHER,
-                "Provides",
-                "String test.Parent.foo()"));
+            "Binding methods may not override another method. Overrides: "
+                + "String test.Parent.foo()");
   }
 
   @Test public void validatesIncludedModules() {
@@ -225,13 +196,12 @@ public class ModuleFactoryGeneratorTest {
         "",
         "@Module(includes = Void.class)",
         "class TestModule {}");
-    assertAbout(javaSources())
-        .that(ImmutableList.of(module))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            String.format(
-                ErrorMessages.REFERENCED_MODULE_NOT_ANNOTATED, "java.lang.Void", "@Module"));
+
+    Compilation compilation = daggerCompiler().compile(module);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining(
+            "java.lang.Void is listed as a module, but is not annotated with @Module");
   }
 
   @Test public void singleProvidesMethodNoArgs() {
@@ -252,29 +222,28 @@ public class ModuleFactoryGeneratorTest {
             "TestModule_ProvideStringFactory",
             "package test;",
             "",
-            "import dagger.internal.Factory;",
-            "import dagger.internal.Preconditions;",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports(
+                "import dagger.internal.Factory;",
+                "import dagger.internal.Preconditions;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class TestModule_ProvideStringFactory implements Factory<String> {",
             "  private final TestModule module;",
             "",
             "  public TestModule_ProvideStringFactory(TestModule module) {",
-            "    assert module != null;",
             "    this.module = module;",
             "  }",
             "",
             "  @Override public String get() {",
-            "    return Preconditions.checkNotNull(module.provideString(), " + NPE_LITERAL + ");",
+            "    return provideString(module);",
             "  }",
             "",
-            "  public static Factory<String> create(TestModule module) {",
+            "  public static TestModule_ProvideStringFactory create(TestModule module) {",
             "    return new TestModule_ProvideStringFactory(module);",
             "  }",
             "",
-            "  public static String proxyProvideString(TestModule instance) {",
-            "    return instance.provideString();",
+            "  public static String provideString(TestModule instance) {",
+            "    return Preconditions.checkNotNullFromProvides(instance.provideString());",
             "  }",
             "}");
     assertAbout(javaSource()).that(moduleFile)
@@ -301,27 +270,25 @@ public class ModuleFactoryGeneratorTest {
             "TestModule_ProvideStringFactory",
             "package test;",
             "",
-            "import dagger.internal.Factory;",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports("import dagger.internal.Factory;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class TestModule_ProvideStringFactory implements Factory<String> {",
             "  private final TestModule module;",
             "",
             "  public TestModule_ProvideStringFactory(TestModule module) {",
-            "    assert module != null;",
             "    this.module = module;",
             "  }",
             "",
             "  @Override public String get() {",
-            "    return module.provideString();",
+            "    return provideString(module);",
             "  }",
             "",
-            "  public static Factory<String> create(TestModule module) {",
+            "  public static TestModule_ProvideStringFactory create(TestModule module) {",
             "    return new TestModule_ProvideStringFactory(module);",
             "  }",
             "",
-            "  public static String proxyProvideString(TestModule instance) {",
+            "  public static String provideString(TestModule instance) {",
             "    return instance.provideString();",
             "  }",
             "}");
@@ -348,29 +315,28 @@ public class ModuleFactoryGeneratorTest {
             "TestModule_ProvideStringFactory",
             "package test;",
             "",
-            "import dagger.internal.Factory;",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports("import dagger.internal.Factory;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class TestModule_ProvideStringFactory implements Factory<String> {",
             "  private final TestModule module;",
             "",
             "  public TestModule_ProvideStringFactory(TestModule module) {",
-            "    assert module != null;",
             "    this.module = module;",
             "  }",
             "",
             "  @Override",
             "  @Nullable",
             "  public String get() {",
-            "    return module.provideString();",
+            "    return provideString(module);",
             "  }",
             "",
-            "  public static Factory<String> create(TestModule module) {",
+            "  public static TestModule_ProvideStringFactory create(TestModule module) {",
             "    return new TestModule_ProvideStringFactory(module);",
             "  }",
             "",
-            "  public static String proxyProvideString(TestModule instance) {",
+            "  @Nullable",
+            "  public static String provideString(TestModule instance) {",
             "    return instance.provideString();",
             "  }",
             "}");
@@ -379,21 +345,6 @@ public class ModuleFactoryGeneratorTest {
         .compilesWithoutError()
         .and().generatesSources(factoryFile);
   }
-
-  private static final JavaFileObject QUALIFIER_A =
-      JavaFileObjects.forSourceLines("test.QualifierA",
-          "package test;",
-          "",
-          "import javax.inject.Qualifier;",
-          "",
-          "@Qualifier @interface QualifierA {}");
-  private static final JavaFileObject QUALIFIER_B =
-      JavaFileObjects.forSourceLines("test.QualifierB",
-          "package test;",
-          "",
-          "import javax.inject.Qualifier;",
-          "",
-          "@Qualifier @interface QualifierB {}");
 
   @Test public void multipleProvidesMethods() {
     JavaFileObject classXFile = JavaFileObjects.forSourceLines("test.X",
@@ -416,7 +367,7 @@ public class ModuleFactoryGeneratorTest {
         "@Module",
         "final class TestModule {",
         "  @Provides List<Object> provideObjects(",
-        "      @QualifierA Object a, @QualifierB Object b, MembersInjector<X> x) {",
+        "      @QualifierA Object a, @QualifierB Object b, MembersInjector<X> xInjector) {",
         "    return Arrays.asList(a, b);",
         "  }",
         "",
@@ -433,54 +384,50 @@ public class ModuleFactoryGeneratorTest {
             "TestModule_ProvideObjectsFactory",
             "package test;",
             "",
-            "import dagger.MembersInjector;",
-            "import dagger.internal.Factory;",
-            "import dagger.internal.Preconditions;",
-            "import java.util.List;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
+            GeneratedLines.generatedImports(
+                "import dagger.MembersInjector;",
+                "import dagger.internal.Factory;",
+                "import dagger.internal.Preconditions;",
+                "import java.util.List;",
+                "import javax.inject.Provider;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class TestModule_ProvideObjectsFactory",
             "    implements Factory<List<Object>> {",
             "  private final TestModule module;",
             "  private final Provider<Object> aProvider;",
             "  private final Provider<Object> bProvider;",
-            "  private final MembersInjector<X> xMembersInjector;",
+            "  private final Provider<MembersInjector<X>> xInjectorProvider;",
             "",
             "  public TestModule_ProvideObjectsFactory(",
             "      TestModule module,",
             "      Provider<Object> aProvider,",
             "      Provider<Object> bProvider,",
-            "      MembersInjector<X> xMembersInjector) {",
-            "    assert module != null;",
+            "      Provider<MembersInjector<X>> xInjectorProvider) {",
             "    this.module = module;",
-            "    assert aProvider != null;",
             "    this.aProvider = aProvider;",
-            "    assert bProvider != null;",
             "    this.bProvider = bProvider;",
-            "    assert xMembersInjector != null;",
-            "    this.xMembersInjector = xMembersInjector;",
+            "    this.xInjectorProvider = xInjectorProvider;",
             "  }",
             "",
             "  @Override public List<Object> get() {",
-            "    return Preconditions.checkNotNull(",
-            "        module.provideObjects(aProvider.get(), bProvider.get(), xMembersInjector),",
-            "        " + NPE_LITERAL + ");",
+            "    return provideObjects(",
+            "        module, aProvider.get(), bProvider.get(), xInjectorProvider.get());",
             "  }",
             "",
-            "  public static Factory<List<Object>> create(",
+            "  public static TestModule_ProvideObjectsFactory create(",
             "      TestModule module,",
             "      Provider<Object> aProvider,",
             "      Provider<Object> bProvider,",
-            "      MembersInjector<X> xMembersInjector) {",
+            "      Provider<MembersInjector<X>> xInjectorProvider) {",
             "    return new TestModule_ProvideObjectsFactory(",
-            "        module, aProvider, bProvider, xMembersInjector);",
+            "        module, aProvider, bProvider, xInjectorProvider);",
             "  }",
             "",
-            "  public static List<Object> proxyProvideObjects(",
-            "      TestModule instance, Object a, Object b, Object x) {",
-            "    return instance.provideObjects(a, b, (MembersInjector<X>) x);",
+            "  public static List<Object> provideObjects(",
+            "      TestModule instance, Object a, Object b, MembersInjector<X> xInjector) {",
+            "    return Preconditions.checkNotNullFromProvides(",
+            "        instance.provideObjects(a, b, xInjector));",
             "  }",
             "}");
     assertAbout(javaSources()).that(
@@ -510,29 +457,28 @@ public class ModuleFactoryGeneratorTest {
             "TestModule_ProvideStringFactory",
             "package test;",
             "",
-            "import dagger.internal.Factory;",
-            "import dagger.internal.Preconditions;",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports(
+                "import dagger.internal.Factory;",
+                "import dagger.internal.Preconditions;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class TestModule_ProvideStringFactory implements Factory<String> {",
             "  private final TestModule module;",
             "",
             "  public TestModule_ProvideStringFactory(TestModule module) {",
-            "    assert module != null;",
             "    this.module = module;",
             "  }",
             "",
             "  @Override public String get() {",
-            "    return Preconditions.checkNotNull(module.provideString(), " + NPE_LITERAL + ");",
+            "    return provideString(module);",
             "  }",
             "",
-            "  public static Factory<String> create(TestModule module) {",
+            "  public static TestModule_ProvideStringFactory create(TestModule module) {",
             "    return new TestModule_ProvideStringFactory(module);",
             "  }",
             "",
-            "  public static String proxyProvideString(TestModule instance) {",
-            "    return instance.provideString();",
+            "  public static String provideString(TestModule instance) {",
+            "    return Preconditions.checkNotNullFromProvides(instance.provideString());",
             "  }",
             "}");
     assertAbout(javaSource()).that(moduleFile)
@@ -563,33 +509,31 @@ public class ModuleFactoryGeneratorTest {
             "TestModule_ProvideWildcardListFactory",
             "package test;",
             "",
-            "import dagger.internal.Factory;",
-            "import dagger.internal.Preconditions;",
-            "import java.util.List;",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports(
+                "import dagger.internal.Factory;",
+                "import dagger.internal.Preconditions;",
+                "import java.util.List;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class TestModule_ProvideWildcardListFactory implements "
                 + "Factory<List<List<?>>> {",
             "  private final TestModule module;",
             "",
             "  public TestModule_ProvideWildcardListFactory(TestModule module) {",
-            "    assert module != null;",
             "    this.module = module;",
             "  }",
             "",
             "  @Override public List<List<?>> get() {",
-            "    return Preconditions.checkNotNull(module.provideWildcardList(), "
-                + NPE_LITERAL
-                + ");",
+            "    return provideWildcardList(module);",
             "  }",
             "",
-            "  public static Factory<List<List<?>>> create(TestModule module) {",
+            "  public static TestModule_ProvideWildcardListFactory create(TestModule module) {",
             "    return new TestModule_ProvideWildcardListFactory(module);",
             "  }",
             "",
-            "  public static List<List<?>> proxyProvideWildcardList(TestModule instance) {",
-            "    return instance.provideWildcardList();",
+            "  public static List<List<?>> provideWildcardList(TestModule instance) {",
+            "    return Preconditions.checkNotNullFromProvides(",
+            "        instance.provideWildcardList());",
             "  }",
             "}");
     assertAbout(javaSource()).that(moduleFile)
@@ -618,30 +562,30 @@ public class ModuleFactoryGeneratorTest {
             "TestModule_ProvideStringsFactory",
             "package test;",
             "",
-            "import dagger.internal.Factory;",
-            "import dagger.internal.Preconditions;",
-            "import java.util.Set;",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports(
+                "import dagger.internal.Factory;",
+                "import dagger.internal.Preconditions;",
+                "import java.util.Set;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class TestModule_ProvideStringsFactory implements Factory<Set<String>> {",
             "  private final TestModule module;",
             "",
             "  public TestModule_ProvideStringsFactory(TestModule module) {",
-            "    assert module != null;",
             "    this.module = module;",
             "  }",
             "",
             "  @Override public Set<String> get() {",
-            "    return Preconditions.checkNotNull(module.provideStrings(), " + NPE_LITERAL + ");",
+            "    return provideStrings(module);",
             "  }",
             "",
-            "  public static Factory<Set<String>> create(TestModule module) {",
+            "  public static TestModule_ProvideStringsFactory create(TestModule module) {",
             "    return new TestModule_ProvideStringsFactory(module);",
             "  }",
             "",
-            "  public static Set<String> proxyProvideStrings(TestModule instance) {",
-            "    return instance.provideStrings();",
+            "  public static Set<String> provideStrings(TestModule instance) {",
+            "    return Preconditions.checkNotNullFromProvides(",
+            "        instance.provideStrings());",
             "  }",
             "}");
     assertAbout(javaSource()).that(moduleFile)
@@ -667,12 +611,18 @@ public class ModuleFactoryGeneratorTest {
         "    return \"\";",
         "  }",
         "}");
-    assertAbout(javaSource()).that(moduleFile)
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-    .withErrorContaining(formatErrorMessage(BINDING_METHOD_WITH_SAME_NAME)).in(moduleFile).onLine(8)
-        .and().withErrorContaining(formatErrorMessage(BINDING_METHOD_WITH_SAME_NAME))
-        .in(moduleFile).onLine(12);
+    Compilation compilation = daggerCompiler().compile(moduleFile);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining(
+            "Cannot have more than one binding method with the same name in a single module")
+        .inFile(moduleFile)
+        .onLine(8);
+    assertThat(compilation)
+        .hadErrorContaining(
+            "Cannot have more than one binding method with the same name in a single module")
+        .inFile(moduleFile)
+        .onLine(12);
   }
 
   @Test
@@ -695,16 +645,15 @@ public class ModuleFactoryGeneratorTest {
             "    return \"\";",
             "  }",
             "}");
-    assertAbout(javaSource())
-        .that(moduleFile)
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining(formatErrorMessage(BINDING_METHOD_THROWS_CHECKED))
-        .in(moduleFile)
-        .onLine(8)
-        .and()
-        .withErrorContaining(formatErrorMessage(BINDING_METHOD_THROWS_CHECKED))
-        .in(moduleFile)
+    Compilation compilation = daggerCompiler().compile(moduleFile);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("@Provides methods may only throw unchecked exceptions")
+        .inFile(moduleFile)
+        .onLine(8);
+    assertThat(compilation)
+        .hadErrorContaining("@Provides methods may only throw unchecked exceptions")
+        .inFile(moduleFile)
         .onLine(12);
   }
 
@@ -744,9 +693,8 @@ public class ModuleFactoryGeneratorTest {
         "    return null;",
         "  }",
         "}");
-    assertAbout(javaSource()).that(moduleFile)
-        .processedWith(new ComponentProcessor())
-        .compilesWithoutError();
+    Compilation compilation = daggerCompiler().compile(moduleFile);
+    assertThat(compilation).succeeded();
   }
 
   @Test
@@ -760,13 +708,14 @@ public class ModuleFactoryGeneratorTest {
         "  @Module private static final class PrivateModule {",
         "  }",
         "}");
-    assertAbout(javaSource())
-        .that(moduleFile)
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining("Modules cannot be private.")
-        .in(moduleFile).onLine(6);
+    Compilation compilation = daggerCompiler().compile(moduleFile);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("Modules cannot be private")
+        .inFile(moduleFile)
+        .onLine(6);
   }
+
 
   @Test
   public void enclosedInPrivateModule() {
@@ -781,12 +730,12 @@ public class ModuleFactoryGeneratorTest {
         "    }",
         "  }",
         "}");
-    assertAbout(javaSource())
-        .that(moduleFile)
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining("Modules cannot be enclosed in private types.")
-        .in(moduleFile).onLine(7);
+    Compilation compilation = daggerCompiler().compile(moduleFile);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("Modules cannot be enclosed in private types")
+        .inFile(moduleFile)
+        .onLine(7);
   }
 
   @Test
@@ -797,25 +746,37 @@ public class ModuleFactoryGeneratorTest {
         "import dagger.Module;",
         "",
         "@Module(includes = {",
-        "    NonPublicModule1.class, OtherPublicModule.class, NonPublicModule2.class",
+        "    BadNonPublicModule.class, OtherPublicModule.class, OkNonPublicModule.class",
         "})",
         "public final class PublicModule {",
         "}");
-    JavaFileObject nonPublicModule1File = JavaFileObjects.forSourceLines("test.NonPublicModule1",
+    JavaFileObject badNonPublicModuleFile =
+        JavaFileObjects.forSourceLines(
+            "test.BadNonPublicModule",
+            "package test;",
+            "",
+            "import dagger.Module;",
+            "import dagger.Provides;",
+            "",
+            "@Module",
+            "final class BadNonPublicModule {",
+            "  @Provides",
+            "  int provideInt() {",
+            "    return 42;",
+            "  }",
+            "}");
+    JavaFileObject okNonPublicModuleFile = JavaFileObjects.forSourceLines("test.OkNonPublicModule",
         "package test;",
         "",
         "import dagger.Module;",
+        "import dagger.Provides;",
         "",
         "@Module",
-        "final class NonPublicModule1 {",
-        "}");
-    JavaFileObject nonPublicModule2File = JavaFileObjects.forSourceLines("test.NonPublicModule2",
-        "package test;",
-        "",
-        "import dagger.Module;",
-        "",
-        "@Module",
-        "final class NonPublicModule2 {",
+        "final class OkNonPublicModule {",
+        "  @Provides",
+        "  static String provideString() {",
+        "    return \"foo\";",
+        "  }",
         "}");
     JavaFileObject otherPublicModuleFile = JavaFileObjects.forSourceLines("test.OtherPublicModule",
         "package test;",
@@ -825,16 +786,22 @@ public class ModuleFactoryGeneratorTest {
         "@Module",
         "public final class OtherPublicModule {",
         "}");
-    assertAbout(javaSources())
-        .that(ImmutableList.of(
-            publicModuleFile, nonPublicModule1File, nonPublicModule2File, otherPublicModuleFile))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining("This module is public, but it includes non-public "
-            + "(or effectively non-public) modules. "
-            + "Either reduce the visibility of this module or make "
-            + "test.NonPublicModule1 and test.NonPublicModule2 public.")
-        .in(publicModuleFile).onLine(8);
+    Compilation compilation =
+        daggerCompiler()
+            .compile(
+                publicModuleFile,
+                badNonPublicModuleFile,
+                okNonPublicModuleFile,
+                otherPublicModuleFile);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining(
+            "This module is public, but it includes non-public (or effectively non-public) modules "
+                + "(test.BadNonPublicModule) that have non-static, non-abstract binding methods. "
+                + "Either reduce the visibility of this module, make the included modules public, "
+                + "or make all of the binding methods on the included modules abstract or static.")
+        .inFile(publicModuleFile)
+        .onLine(8);
   }
 
   @Test
@@ -906,13 +873,13 @@ public class ModuleFactoryGeneratorTest {
             "test.ParentModule_ProvideListBFactory",
             "package test;",
             "",
-            "import dagger.internal.Factory;",
-            "import dagger.internal.Preconditions;",
-            "import java.util.List;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
+            GeneratedLines.generatedImports(
+                "import dagger.internal.Factory;",
+                "import dagger.internal.Preconditions;",
+                "import java.util.List;",
+                "import javax.inject.Provider;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class ParentModule_ProvideListBFactory<A extends CharSequence,",
             "    B, C extends Number & Comparable<C>> implements Factory<List<B>> {",
             "  private final ParentModule<A, B, C> module;",
@@ -920,27 +887,24 @@ public class ModuleFactoryGeneratorTest {
             "",
             "  public ParentModule_ProvideListBFactory(",
             "        ParentModule<A, B, C> module, Provider<B> bProvider) {",
-            "    assert module != null;",
             "    this.module = module;",
-            "    assert bProvider != null;",
             "    this.bProvider = bProvider;",
             "  }",
             "",
             "  @Override",
             "  public List<B> get() {  ",
-            "    return Preconditions.checkNotNull(module.provideListB(bProvider.get()),",
-            "        " + NPE_LITERAL + ");",
+            "    return provideListB(module, bProvider.get());",
             "  }",
             "",
             "  public static <A extends CharSequence, B, C extends Number & Comparable<C>>",
-            "      Factory<List<B>> create(ParentModule<A, B, C> module, Provider<B> bProvider) {",
+            "      ParentModule_ProvideListBFactory<A, B, C>  create(",
+            "          ParentModule<A, B, C> module, Provider<B> bProvider) {",
             "    return new ParentModule_ProvideListBFactory<A, B, C>(module, bProvider);",
             "  }",
             "",
             "  public static <A extends CharSequence, B, C extends Number & Comparable<C>> List<B>",
-            "      proxyProvideListB(",
-            "          ParentModule<A, B, C> instance, B b) {",
-            "    return instance.provideListB(b);",
+            "      provideListB(ParentModule<A, B, C> instance, B b) {",
+            "    return Preconditions.checkNotNullFromProvides(instance.provideListB(b));",
             "  }",
             "}");
     JavaFileObject bElementFactory =
@@ -948,12 +912,12 @@ public class ModuleFactoryGeneratorTest {
             "test.ParentModule_ProvideBElementFactory",
             "package test;",
             "",
-            "import dagger.internal.Factory;",
-            "import dagger.internal.Preconditions;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
+            GeneratedLines.generatedImports(
+                "import dagger.internal.Factory;",
+                "import dagger.internal.Preconditions;",
+                "import javax.inject.Provider;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class ParentModule_ProvideBElementFactory<A extends CharSequence,",
             "    B, C extends Number & Comparable<C>> implements Factory<B> {",
             "  private final ParentModule<A, B, C> module;",
@@ -961,27 +925,25 @@ public class ModuleFactoryGeneratorTest {
             "",
             "  public ParentModule_ProvideBElementFactory(",
             "        ParentModule<A, B, C> module, Provider<B> bProvider) {",
-            "    assert module != null;",
             "    this.module = module;",
-            "    assert bProvider != null;",
             "    this.bProvider = bProvider;",
             "  }",
             "",
             "  @Override",
             "  public B get() {  ",
-            "    return Preconditions.checkNotNull(",
-            "        module.provideBElement(bProvider.get()), " + NPE_LITERAL + ");",
+            "    return provideBElement(module, bProvider.get());",
             "  }",
             "",
             "  public static <A extends CharSequence, B, C extends Number & Comparable<C>>",
-            "      Factory<B> create(ParentModule<A, B, C> module, Provider<B> bProvider) {",
+            "      ParentModule_ProvideBElementFactory<A, B, C> create(",
+            "          ParentModule<A, B, C> module, Provider<B> bProvider) {",
             "    return new ParentModule_ProvideBElementFactory<A, B, C>(module, bProvider);",
             "  }",
             "",
             "  public static <A extends CharSequence, B, C extends Number & Comparable<C>>",
-            "      B proxyProvideBElement(",
+            "      B provideBElement(",
             "          ParentModule<A, B, C> instance, B b) {",
-            "        return instance.provideBElement(b);",
+            "    return Preconditions.checkNotNullFromProvides(instance.provideBElement(b));",
             "  }",
             "}");
     JavaFileObject bEntryFactory =
@@ -989,12 +951,12 @@ public class ModuleFactoryGeneratorTest {
             "test.ParentModule_ProvideBEntryFactory",
             "package test;",
             "",
-            "import dagger.internal.Factory;",
-            "import dagger.internal.Preconditions;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
+            GeneratedLines.generatedImports(
+                "import dagger.internal.Factory;",
+                "import dagger.internal.Preconditions;",
+                "import javax.inject.Provider;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class ParentModule_ProvideBEntryFactory<A extends CharSequence,",
             "    B, C extends Number & Comparable<C>> implements Factory<B>> {",
             "  private final ParentModule<A, B, C> module;",
@@ -1002,27 +964,25 @@ public class ModuleFactoryGeneratorTest {
             "",
             "  public ParentModule_ProvideBEntryFactory(",
             "        ParentModule<A, B, C> module, Provider<B> bProvider) {",
-            "    assert module != null;",
             "    this.module = module;",
-            "    assert bProvider != null;",
             "    this.bProvider = bProvider;",
             "  }",
             "",
             "  @Override",
             "  public B get() {  ",
-            "    return Preconditions.checkNotNull(module.provideBEntry(bProvider.get()), ",
-            "        " + NPE_LITERAL + ");",
+            "    return provideBEntry(module, bProvider.get());",
             "  }",
             "",
             "  public static <A extends CharSequence, B, C extends Number & Comparable<C>>",
-            "      Factory<B> create(ParentModule<A, B, C> module, Provider<B> bProvider) {",
+            "      ParentModule_ProvideBEntryFactory<A, B, C> create(",
+            "          ParentModule<A, B, C> module, Provider<B> bProvider) {",
             "    return new ParentModule_ProvideBEntryFactory<A, B, C>(module, bProvider);",
             "  }",
             "",
             "  public static <A extends CharSequence, B, C extends Number & Comparable<C>>",
-            "      B proxyProvideBEntry(",
+            "      B provideBEntry(",
             "          ParentModule<A, B, C> instance, B b) {",
-            "        return instance.provideBEntry(b);",
+            "    return Preconditions.checkNotNullFromProvides(instance.provideBEntry(b));",
             "  }",
             "}");
     JavaFileObject numberFactory =
@@ -1030,31 +990,31 @@ public class ModuleFactoryGeneratorTest {
             "test.ChildNumberModule_ProvideNumberFactory",
             "package test;",
             "",
-            "import dagger.internal.Factory;",
-            "import dagger.internal.Preconditions;",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports(
+                "import dagger.internal.Factory;",
+                "import dagger.internal.Preconditions;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class ChildNumberModule_ProvideNumberFactory",
             "    implements Factory<Number> {",
             "  private final ChildNumberModule module;",
             "",
             "  public ChildNumberModule_ProvideNumberFactory(ChildNumberModule module) {",
-            "    assert module != null;",
             "    this.module = module;",
             "  }",
             "",
             "  @Override",
             "  public Number get() {  ",
-            "    return Preconditions.checkNotNull(module.provideNumber(), " + NPE_LITERAL + ");",
+            "    return provideNumber(module);",
             "  }",
             "",
-            "  public static Factory<Number> create(ChildNumberModule module) {",
+            "  public static ChildNumberModule_ProvideNumberFactory create(",
+            "      ChildNumberModule module) {",
             "    return new ChildNumberModule_ProvideNumberFactory(module);",
             "  }",
             "",
-            "  public static Number proxyProvideNumber(ChildNumberModule instance) {",
-            "    return instance.provideNumber();",
+            "  public static Number provideNumber(ChildNumberModule instance) {",
+            "    return Preconditions.checkNotNullFromProvides(instance.provideNumber());",
             "  }",
             "}");
     JavaFileObject integerFactory =
@@ -1062,31 +1022,32 @@ public class ModuleFactoryGeneratorTest {
             "test.ChildIntegerModule_ProvideIntegerFactory",
             "package test;",
             "",
-            "import dagger.internal.Factory;",
-            "import dagger.internal.Preconditions;",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports(
+                "import dagger.internal.Factory;",
+                "import dagger.internal.Preconditions;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class ChildIntegerModule_ProvideIntegerFactory",
             "    implements Factory<Integer> {",
             "  private final ChildIntegerModule module;",
             "",
             "  public ChildIntegerModule_ProvideIntegerFactory(ChildIntegerModule module) {",
-            "    assert module != null;",
             "    this.module = module;",
             "  }",
             "",
             "  @Override",
             "  public Integer get() {  ",
-            "    return Preconditions.checkNotNull(module.provideInteger(), " + NPE_LITERAL + ");",
+            "    return provideInteger(module);",
             "  }",
             "",
-            "  public static Factory<Integer> create(ChildIntegerModule module) {",
+            "  public static ChildIntegerModule_ProvideIntegerFactory create(",
+            "      ChildIntegerModule module) {",
             "    return new ChildIntegerModule_ProvideIntegerFactory(module);",
             "  }",
             "",
-            "  public static Integer proxyProvideInteger(ChildIntegerModule instance) {",
-            "    return instance.provideInteger();",
+            "  public static Integer provideInteger(ChildIntegerModule instance) {",
+            "    return Preconditions.checkNotNullFromProvides(",
+            "        instance.provideInteger());",
             "  }",
             "}");
     assertAbout(javaSources())
@@ -1134,29 +1095,31 @@ public class ModuleFactoryGeneratorTest {
             "test.ParameterizedModule_ProvideMapStringNumberFactory;",
             "package test;",
             "",
-            "import dagger.internal.Factory;",
-            "import dagger.internal.Preconditions;",
-            "import java.util.Map;",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports(
+                "import dagger.internal.Factory;",
+                "import dagger.internal.Preconditions;",
+                "import java.util.Map;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class ParameterizedModule_ProvideMapStringNumberFactory",
             "    implements Factory<Map<String, Number>> {",
-            "  private static final ParameterizedModule_ProvideMapStringNumberFactory INSTANCE =",
-            "      new ParameterizedModule_ProvideMapStringNumberFactory();",
-            "",
             "  @Override",
             "  public Map<String, Number> get() {",
-            "    return Preconditions.checkNotNull(ParameterizedModule.provideMapStringNumber(),",
-            "        " + NPE_LITERAL + ");",
+            "    return provideMapStringNumber();",
             "  }",
             "",
-            "  public static Factory<Map<String, Number>> create() {",
-            "    return INSTANCE;",
+            "  public static ParameterizedModule_ProvideMapStringNumberFactory create() {",
+            "    return InstanceHolder.INSTANCE;",
             "  }",
             "",
-            "  public static Map<String, Number> proxyProvideMapStringNumber() {",
-            "    return ParameterizedModule.provideMapStringNumber();",
+            "  public static Map<String, Number> provideMapStringNumber() {",
+            "    return Preconditions.checkNotNullFromProvides(",
+            "        ParameterizedModule.provideMapStringNumber());",
+            "  }",
+            "",
+            "  private static final class InstanceHolder {",
+            "    private static final ParameterizedModule_ProvideMapStringNumberFactory INSTANCE =",
+            "        new ParameterizedModule_ProvideMapStringNumberFactory();",
             "  }",
             "}");
 
@@ -1165,28 +1128,30 @@ public class ModuleFactoryGeneratorTest {
             "test.ParameterizedModule_ProvideNonGenericTypeFactory;",
             "package test;",
             "",
-            "import dagger.internal.Factory;",
-            "import dagger.internal.Preconditions;",
-            "import javax.annotation.Generated;",
+            GeneratedLines.generatedImports(
+                "import dagger.internal.Factory;",
+                "import dagger.internal.Preconditions;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class ParameterizedModule_ProvideNonGenericTypeFactory",
             "    implements Factory<Object> {",
-            "  private static final ParameterizedModule_ProvideNonGenericTypeFactory INSTANCE = ",
-            "      new ParameterizedModule_ProvideNonGenericTypeFactory();",
-            "",
             "  @Override",
             "  public Object get() {",
-            "    return Preconditions.checkNotNull(ParameterizedModule.provideNonGenericType(),",
-            "        " + NPE_LITERAL + ");",
+            "    return provideNonGenericType();",
             "  }",
             "",
-            "  public static Factory<Object> create() {",
-            "    return INSTANCE;",
+            "  public static ParameterizedModule_ProvideNonGenericTypeFactory create() {",
+            "    return InstanceHolder.INSTANCE;",
             "  }",
             "",
-            "  public static Object proxyProvideNonGenericType() {",
-            "    return ParameterizedModule.provideNonGenericType();",
+            "  public static Object provideNonGenericType() {",
+            "    return Preconditions.checkNotNullFromProvides(",
+            "        ParameterizedModule.provideNonGenericType());",
+            "  }",
+            "",
+            "  private static final class InstanceHolder {",
+            "    private static final ParameterizedModule_ProvideNonGenericTypeFactory INSTANCE =",
+            "        new ParameterizedModule_ProvideNonGenericTypeFactory();",
             "  }",
             "}");
 
@@ -1195,35 +1160,34 @@ public class ModuleFactoryGeneratorTest {
             "test.ParameterizedModule_ProvideNonGenericTypeWithDepsFactory;",
             "package test;",
             "",
-            "import dagger.internal.Factory;",
-            "import dagger.internal.Preconditions;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
+            GeneratedLines.generatedImports(
+                "import dagger.internal.Factory;",
+                "import dagger.internal.Preconditions;",
+                "import javax.inject.Provider;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotations(),
             "public final class ParameterizedModule_ProvideNonGenericTypeWithDepsFactory",
             "    implements Factory<String> {",
             "  private final Provider<Object> oProvider;",
             "",
             "  public ParameterizedModule_ProvideNonGenericTypeWithDepsFactory(",
             "      Provider<Object> oProvider) {",
-            "    assert oProvider != null;",
             "    this.oProvider = oProvider;",
             "  }",
             "",
             "  @Override",
             "  public String get() {",
-            "    return Preconditions.checkNotNull(",
-            "        ParameterizedModule.provideNonGenericTypeWithDeps(oProvider.get()),",
-            "        " + NPE_LITERAL + ");",
+            "    return provideNonGenericTypeWithDeps(oProvider.get());",
             "  }",
             "",
-            "  public static Factory<String> create(Provider<Object> oProvider) {",
+            "  public static ParameterizedModule_ProvideNonGenericTypeWithDepsFactory create(",
+            "      Provider<Object> oProvider) {",
             "    return new ParameterizedModule_ProvideNonGenericTypeWithDepsFactory(oProvider);",
             "  }",
             "",
-            "  public static String proxyProvideNonGenericTypeWithDeps(Object o) {",
-            "    return ParameterizedModule.provideNonGenericTypeWithDeps(o);",
+            "  public static String provideNonGenericTypeWithDeps(Object o) {",
+            "    return Preconditions.checkNotNullFromProvides(",
+            "        ParameterizedModule.provideNonGenericTypeWithDeps(o));",
             "  }",
             "}");
 
@@ -1238,14 +1202,31 @@ public class ModuleFactoryGeneratorTest {
             provideNonGenericTypeWithDepsFactory);
   }
 
-  @Test public void providesMethodMultipleQualifiers() {
+  private static final JavaFileObject QUALIFIER_A =
+      JavaFileObjects.forSourceLines(
+          "test.QualifierA",
+          "package test;",
+          "",
+          "import javax.inject.Qualifier;",
+          "",
+          "@Qualifier @interface QualifierA {}");
+
+  private static final JavaFileObject QUALIFIER_B =
+      JavaFileObjects.forSourceLines(
+          "test.QualifierB",
+          "package test;",
+          "",
+          "import javax.inject.Qualifier;",
+          "",
+          "@Qualifier @interface QualifierB {}");
+
+  @Test
+  public void providesMethodMultipleQualifiersOnMethod() {
     JavaFileObject moduleFile = JavaFileObjects.forSourceLines("test.TestModule",
         "package test;",
         "",
         "import dagger.Module;",
         "import dagger.Provides;",
-        "import javax.annotation.Nullable;",
-        "import javax.inject.Singleton;",
         "",
         "@Module",
         "final class TestModule {",
@@ -1253,10 +1234,104 @@ public class ModuleFactoryGeneratorTest {
         "    return \"foo\";",
         "  }",
         "}");
-    assertAbout(javaSources()).that(ImmutableList.of(moduleFile, QUALIFIER_A, QUALIFIER_B))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining(BINDING_METHOD_MULTIPLE_QUALIFIERS);
+    Compilation compilation = daggerCompiler().compile(moduleFile, QUALIFIER_A, QUALIFIER_B);
+    assertThat(compilation).failed();
+    assertThat(compilation).hadErrorContaining("may not use more than one @Qualifier");
+  }
+
+  @Test
+  public void providesMethodMultipleQualifiersOnParameter() {
+    JavaFileObject moduleFile =
+        JavaFileObjects.forSourceLines(
+            "test.TestModule",
+            "package test;",
+            "",
+            "import dagger.Module;",
+            "import dagger.Provides;",
+            "",
+            "@Module",
+            "final class TestModule {",
+            "  @Provides static String provideString(@QualifierA @QualifierB Object object) {",
+            "    return \"foo\";",
+            "  }",
+            "}");
+    Compilation compilation = daggerCompiler().compile(moduleFile, QUALIFIER_A, QUALIFIER_B);
+    assertThat(compilation).failed();
+    assertThat(compilation).hadErrorContaining("may not use more than one @Qualifier");
+  }
+
+  @Test
+  public void providesMethodWildcardDependency() {
+    JavaFileObject moduleFile =
+        JavaFileObjects.forSourceLines(
+            "test.TestModule",
+            "package test;",
+            "",
+            "import dagger.Module;",
+            "import dagger.Provides;",
+            "import javax.inject.Provider;",
+            "",
+            "@Module",
+            "final class TestModule {",
+            "  @Provides static String provideString(Provider<? extends Number> numberProvider) {",
+            "    return \"foo\";",
+            "  }",
+            "}");
+    Compilation compilation = daggerCompiler().compile(moduleFile, QUALIFIER_A, QUALIFIER_B);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining(
+            "Dagger does not support injecting Provider<T>, Lazy<T>, Producer<T>, or Produced<T> "
+                + "when T is a wildcard type such as ? extends java.lang.Number");
+  }
+
+  private static final JavaFileObject SCOPE_A =
+      JavaFileObjects.forSourceLines(
+          "test.ScopeA",
+          "package test;",
+          "",
+          "import javax.inject.Scope;",
+          "",
+          "@Scope @interface ScopeA {}");
+
+  private static final JavaFileObject SCOPE_B =
+      JavaFileObjects.forSourceLines(
+          "test.ScopeB",
+          "package test;",
+          "",
+          "import javax.inject.Scope;",
+          "",
+          "@Scope @interface ScopeB {}");
+
+  @Test
+  public void providesMethodMultipleScopes() {
+    JavaFileObject moduleFile =
+        JavaFileObjects.forSourceLines(
+            "test.TestModule",
+            "package test;",
+            "",
+            "import dagger.Module;",
+            "import dagger.Provides;",
+            "",
+            "@Module",
+            "final class TestModule {",
+            "  @Provides",
+            "  @ScopeA",
+            "  @ScopeB",
+            "  String provideString() {",
+            "    return \"foo\";",
+            "  }",
+            "}");
+    Compilation compilation = daggerCompiler().compile(moduleFile, SCOPE_A, SCOPE_B);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("cannot use more than one @Scope")
+        .inFile(moduleFile)
+        .onLineContaining("@ScopeA");
+    assertThat(compilation)
+        .hadErrorContaining("cannot use more than one @Scope")
+        .inFile(moduleFile)
+        .onLineContaining("@ScopeB");
   }
 
   @Test public void providerDependsOnProduced() {
@@ -1273,10 +1348,10 @@ public class ModuleFactoryGeneratorTest {
         "    return \"foo\";",
         "  }",
         "}");
-    assertAbout(javaSource()).that(moduleFile)
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining("Producer may only be injected in @Produces methods");
+    Compilation compilation = daggerCompiler().compile(moduleFile);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("Producer may only be injected in @Produces methods");
   }
 
   @Test public void providerDependsOnProducer() {
@@ -1293,10 +1368,78 @@ public class ModuleFactoryGeneratorTest {
         "    return \"foo\";",
         "  }",
         "}");
-    assertAbout(javaSource()).that(moduleFile)
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining("Produced may only be injected in @Produces methods");
+    Compilation compilation = daggerCompiler().compile(moduleFile);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("Produced may only be injected in @Produces methods");
+  }
+
+  @Test
+  public void proxyMethodsConflictWithOtherFactoryMethods() {
+    JavaFileObject module =
+        JavaFileObjects.forSourceLines(
+            "test.TestModule",
+            "package test;",
+            "",
+            "import dagger.Module;",
+            "import dagger.Provides;",
+            "",
+            "@Module",
+            "interface TestModule {",
+            "  @Provides",
+            "  static int get() { return 1; }",
+            "",
+            "  @Provides",
+            "  static boolean create() { return true; }",
+            "}");
+
+    Compilation compilation = daggerCompiler().compile(module);
+    assertThat(compilation).succeededWithoutWarnings();
+    assertThat(compilation)
+        .generatedSourceFile("test.TestModule_GetFactory")
+        .containsElementsIn(
+            JavaFileObjects.forSourceLines(
+                "test.TestModule_GetFactory",
+                "package test;",
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "public final class TestModule_GetFactory implements Factory<Integer> {",
+                "  @Override",
+                "  public Integer get() {",
+                "    return proxyGet();",
+                "  }",
+                "",
+                "  public static TestModule_GetFactory create() {",
+                "    return InstanceHolder.INSTANCE;",
+                "  }",
+                "",
+                "  public static int proxyGet() {",
+                "    return TestModule.get();",
+                "  }",
+                "}"));
+
+    assertThat(compilation)
+        .generatedSourceFile("test.TestModule_CreateFactory")
+        .containsElementsIn(
+            JavaFileObjects.forSourceLines(
+                "test.TestModule_CreateFactory",
+                "package test;",
+                "",
+                GeneratedLines.generatedAnnotations(),
+                "public final class TestModule_CreateFactory implements Factory<Boolean> {",
+                "  @Override",
+                "  public Boolean get() {",
+                "    return proxyCreate();",
+                "  }",
+                "",
+                "  public static TestModule_CreateFactory create() {",
+                "    return InstanceHolder.INSTANCE;",
+                "  }",
+                "",
+                "  public static boolean proxyCreate() {",
+                "    return TestModule.create();",
+                "  }",
+                "}"));
   }
 
   private static final String BINDS_METHOD = "@Binds abstract Foo bindFoo(FooImpl impl);";
@@ -1308,25 +1451,45 @@ public class ModuleFactoryGeneratorTest {
   private static final String SOME_ABSTRACT_METHOD = "abstract void blah();";
 
   @Test
-  public void moduleMethodPermutations() {
-    assertThatMethodCombination(BINDS_METHOD, INSTANCE_PROVIDES_METHOD)
-        .failsToCompile()
-        .withErrorContaining(
-            "A @Module may not contain both non-static @Provides methods and "
-                + "abstract @Binds or @Multibinds declarations");
-    assertThatMethodCombination(MULTIBINDS_METHOD, INSTANCE_PROVIDES_METHOD)
-        .failsToCompile()
-        .withErrorContaining(
-            "A @Module may not contain both non-static @Provides methods and "
-                + "abstract @Binds or @Multibinds declarations");
-    assertThatMethodCombination(BINDS_METHOD, STATIC_PROVIDES_METHOD).compilesWithoutError();
-    assertThatMethodCombination(BINDS_METHOD, MULTIBINDS_METHOD).compilesWithoutError();
-    assertThatMethodCombination(MULTIBINDS_METHOD, STATIC_PROVIDES_METHOD).compilesWithoutError();
-    assertThatMethodCombination(INSTANCE_PROVIDES_METHOD, SOME_ABSTRACT_METHOD)
-        .compilesWithoutError();
+  public void bindsWithInstanceProvides() {
+    Compilation compilation = compileMethodCombination(BINDS_METHOD, INSTANCE_PROVIDES_METHOD);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining(
+            "A @Module may not contain both non-static and abstract binding methods");
   }
 
-  private CompileTester assertThatMethodCombination(String... methodLines) {
+  @Test
+  public void multibindsWithInstanceProvides() {
+    Compilation compilation = compileMethodCombination(MULTIBINDS_METHOD, INSTANCE_PROVIDES_METHOD);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining(
+            "A @Module may not contain both non-static and abstract binding methods");
+  }
+
+  @Test
+  public void bindsWithStaticProvides() {
+    assertThat(compileMethodCombination(BINDS_METHOD, STATIC_PROVIDES_METHOD)).succeeded();
+  }
+
+  @Test
+  public void bindsWithMultibinds() {
+    assertThat(compileMethodCombination(BINDS_METHOD, MULTIBINDS_METHOD)).succeeded();
+  }
+
+  @Test
+  public void multibindsWithStaticProvides() {
+    assertThat(compileMethodCombination(MULTIBINDS_METHOD, STATIC_PROVIDES_METHOD)).succeeded();
+  }
+
+  @Test
+  public void instanceProvidesWithAbstractMethod() {
+    assertThat(compileMethodCombination(INSTANCE_PROVIDES_METHOD, SOME_ABSTRACT_METHOD))
+        .succeeded();
+  }
+
+  private Compilation compileMethodCombination(String... methodLines) {
     JavaFileObject fooFile =
         JavaFileObjects.forSourceLines(
             "test.Foo",
@@ -1374,8 +1537,8 @@ public class ModuleFactoryGeneratorTest {
 
     JavaFileObject bindsMethodAndInstanceProvidesMethodModuleFile =
         JavaFileObjects.forSourceLines("test.TestModule", moduleLines);
-    return assertThat(
-            fooFile, fooImplFile, barFile, bazFile, bindsMethodAndInstanceProvidesMethodModuleFile)
-        .processedWith(new ComponentProcessor());
+    return daggerCompiler()
+        .compile(
+            fooFile, fooImplFile, barFile, bazFile, bindsMethodAndInstanceProvidesMethodModuleFile);
   }
 }

@@ -15,14 +15,14 @@
  */
 
 /**
- * This package contains the public API for the <a href="https://google.github.io/dagger/">Dagger 2</a> dependency
+ * This package contains the public API for the <a href="https://dagger.dev/">Dagger 2</a> dependency
  * injection framework. By building upon <a href="https://jcp.org/en/jsr/detail?id=330">JSR 330</a>,
  * Dagger 2 provides an annotation-driven API for dependency injection whose implementation is
  * entirely generated at compile time by <a
  * href="http://en.wikipedia.org/wiki/Java_annotation#Processing">annotation processors</a>.
  *
  * <p>The entry point into the API is the {@link Component}, which annotates abstract types for
- * Dagger 2 to implement. The dependency graph is configured using using annotations such as {@link
+ * Dagger 2 to implement. The dependency graph is configured using annotations such as {@link
  * Module}, {@link Provides} and {@link javax.inject.Inject}.
  *
  * <p>{@code dagger.internal.codegen.ComponentProcessor} is the processor responsible for generating

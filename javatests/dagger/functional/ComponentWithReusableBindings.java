@@ -21,6 +21,7 @@ import dagger.Module;
 import dagger.Provides;
 import dagger.Reusable;
 import dagger.Subcomponent;
+import javax.inject.Provider;
 import javax.inject.Qualifier;
 
 @Component(modules = ComponentWithReusableBindings.ReusableBindingsModule.class)
@@ -38,6 +39,17 @@ interface ComponentWithReusableBindings {
   ChildOne childOne();
 
   ChildTwo childTwo();
+
+  // b/77150738
+  int primitive();
+
+  // b/77150738: This is used as a regression test for fastInit mode's switching providers. In
+  // particular, it occurs when a @Provides method returns the boxed type but the component method
+  // returns the unboxed type, and the instance is requested from a SwitchingProvider.
+  boolean unboxedPrimitive();
+
+  // b/77150738
+  Provider<Boolean> booleanProvider();
 
   @Subcomponent
   interface ChildOne {
@@ -71,6 +83,20 @@ interface ComponentWithReusableBindings {
     @InChildren
     static Object inChildren() {
       return new Object();
+    }
+
+    // b/77150738
+    @Provides
+    @Reusable
+    static int primitive() {
+      return 0;
+    }
+
+    // b/77150738
+    @Provides
+    @Reusable
+    static Boolean boxedPrimitive() {
+      return false;
     }
   }
 }

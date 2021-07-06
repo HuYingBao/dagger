@@ -40,7 +40,7 @@ import javax.tools.Diagnostic.Kind;
 /**
  * Generates code from types annotated with {@link GrpcService @GrpcService}.
  *
- * @see <a href="google.github.io/dagger-grpc">google.github.io/dagger-grpc</a>
+ * @see <a href="https://dagger.dev/dev-guide/grpc">https://dagger.dev/dev-guide/grpc</a>
  */
 @AutoService(Processor.class)
 public class GrpcServiceProcessor extends BasicAnnotationProcessor implements ProcessingStep {
@@ -63,16 +63,21 @@ public class GrpcServiceProcessor extends BasicAnnotationProcessor implements Pr
   @Override
   public Set<Element> process(
       SetMultimap<Class<? extends Annotation>, Element> elementsByAnnotation) {
+    ImmutableSet.Builder<Element> deferredElements = ImmutableSet.builder();
     for (TypeElement element : typesIn(elementsByAnnotation.get(GrpcService.class))) {
-      GrpcServiceModel grpcServiceModel = new GrpcServiceModel(processingEnv, element);
-      if (grpcServiceModel.validate()) {
-        write(new ServiceDefinitionTypeGenerator(grpcServiceModel), element);
-        write(new ProxyModuleGenerator(grpcServiceModel), element);
-        write(new GrpcServiceModuleGenerator(grpcServiceModel), element);
-        write(new UnscopedGrpcServiceModuleGenerator(grpcServiceModel), element);
+      try {
+        GrpcServiceModel grpcServiceModel = new GrpcServiceModel(processingEnv, element);
+        if (grpcServiceModel.validate()) {
+          write(new ServiceDefinitionTypeGenerator(grpcServiceModel), element);
+          write(new ProxyModuleGenerator(grpcServiceModel), element);
+          write(new GrpcServiceModuleGenerator(grpcServiceModel), element);
+          write(new UnscopedGrpcServiceModuleGenerator(grpcServiceModel), element);
+        }
+      } catch (TypeNotPresentException e) {
+        deferredElements.add(element);
       }
     }
-    return ImmutableSet.of();
+    return deferredElements.build();
   }
 
   private void write(SourceGenerator grpcServiceTypeWriter, final TypeElement element) {

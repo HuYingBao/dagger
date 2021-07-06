@@ -17,12 +17,14 @@
 package dagger.android.support;
 
 import android.os.Bundle;
-import android.support.v4.app.Fragment;
-import android.support.v7.app.AppCompatActivity;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.annotation.ContentView;
+import androidx.annotation.LayoutRes;
 import dagger.android.AndroidInjection;
 import dagger.android.AndroidInjector;
 import dagger.android.DispatchingAndroidInjector;
-import dagger.android.HasFragmentInjector;
+import dagger.android.HasAndroidInjector;
 import dagger.internal.Beta;
 import javax.inject.Inject;
 
@@ -32,24 +34,27 @@ import javax.inject.Inject;
  */
 @Beta
 public abstract class DaggerAppCompatActivity extends AppCompatActivity
-    implements HasFragmentInjector, HasSupportFragmentInjector {
+    implements HasAndroidInjector {
 
-  @Inject DispatchingAndroidInjector<Fragment> supportFragmentInjector;
-  @Inject DispatchingAndroidInjector<android.app.Fragment> frameworkFragmentInjector;
+  @Inject DispatchingAndroidInjector<Object> androidInjector;
+
+  public DaggerAppCompatActivity() {
+    super();
+  }
+
+  @ContentView
+  public DaggerAppCompatActivity(@LayoutRes int contentLayoutId) {
+    super(contentLayoutId);
+  }
 
   @Override
-  protected void onCreate(Bundle savedInstanceState) {
+  protected void onCreate(@Nullable Bundle savedInstanceState) {
     AndroidInjection.inject(this);
     super.onCreate(savedInstanceState);
   }
 
   @Override
-  public AndroidInjector<Fragment> supportFragmentInjector() {
-    return supportFragmentInjector;
-  }
-
-  @Override
-  public AndroidInjector<android.app.Fragment> fragmentInjector() {
-    return frameworkFragmentInjector;
+  public AndroidInjector<Object> androidInjector() {
+    return androidInjector;
   }
 }

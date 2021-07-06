@@ -15,20 +15,22 @@
 # Description:
 #   Tests for Dagger's Android integrations
 
-package(default_visibility = ["//:src"])
-
 load("//:build_defs.bzl", "DOCLINT_HTML_AND_SYNTAX")
 load("//:test_defs.bzl", "GenRobolectricTests")
+
+package(default_visibility = ["//:src"])
 
 GenRobolectricTests(
     name = "android_tests",
     srcs = glob(["*.java"]),
+    functional = False,
     javacopts = DOCLINT_HTML_AND_SYNTAX,
+    manifest_values = {"minSdkVersion": "17"},
     deps = [
         "//:dagger_with_compiler",
         "//java/dagger/android",
-        "//third_party:guava",
-        "//third_party:junit",
-        "//third_party:truth",
+        "//java/dagger/internal/guava:collect",
+        "@google_bazel_common//third_party/java/junit",
+        "@google_bazel_common//third_party/java/truth",
     ],
 )

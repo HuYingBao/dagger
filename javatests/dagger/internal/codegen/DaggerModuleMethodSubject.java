@@ -17,14 +17,15 @@
 package dagger.internal.codegen;
 
 import static com.google.common.truth.Truth.assertAbout;
-import static com.google.testing.compile.JavaSourcesSubjectFactory.javaSources;
+import static com.google.testing.compile.CompilationSubject.assertThat;
+import static dagger.internal.codegen.Compilers.daggerCompiler;
 
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
-import com.google.common.truth.FailureStrategy;
+import com.google.common.truth.FailureMetadata;
 import com.google.common.truth.Subject;
-import com.google.common.truth.SubjectFactory;
 import com.google.common.truth.Truth;
+import com.google.testing.compile.Compilation;
 import com.google.testing.compile.JavaFileObjects;
 import dagger.Module;
 import dagger.producers.ProducerModule;
@@ -35,10 +36,10 @@ import java.util.List;
 import javax.tools.JavaFileObject;
 
 /** A {@link Truth} subject for testing Dagger module methods. */
-final class DaggerModuleMethodSubject extends Subject<DaggerModuleMethodSubject, String> {
+final class DaggerModuleMethodSubject extends Subject {
 
   /** A {@link Truth} subject factory for testing Dagger module methods. */
-  static final class Factory extends SubjectFactory<DaggerModuleMethodSubject, String> {
+  static final class Factory implements Subject.Factory<DaggerModuleMethodSubject, String> {
 
     /** Starts a clause testing a Dagger {@link Module @Module} method. */
     static DaggerModuleMethodSubject assertThatModuleMethod(String method) {
@@ -68,14 +69,17 @@ final class DaggerModuleMethodSubject extends Subject<DaggerModuleMethodSubject,
     private Factory() {}
 
     @Override
-    public DaggerModuleMethodSubject getSubject(FailureStrategy fs, String that) {
-      return new DaggerModuleMethodSubject(fs, that);
+    public DaggerModuleMethodSubject createSubject(FailureMetadata failureMetadata, String that) {
+      return new DaggerModuleMethodSubject(failureMetadata, that);
     }
   }
 
-  private ImmutableList.Builder<String> imports =
+  private final String actual;
+  private final ImmutableList.Builder<String> imports =
       new ImmutableList.Builder<String>()
           .add(
+              // explicitly import Module so it's not ambiguous with java.lang.Module
+              "import dagger.Module;",
               "import dagger.*;",
               "import dagger.multibindings.*;",
               "import dagger.producers.*;",
@@ -84,8 +88,9 @@ final class DaggerModuleMethodSubject extends Subject<DaggerModuleMethodSubject,
   private String declaration;
   private ImmutableList<JavaFileObject> additionalSources = ImmutableList.of();
 
-  private DaggerModuleMethodSubject(FailureStrategy failureStrategy, String subject) {
-    super(failureStrategy, subject);
+  private DaggerModuleMethodSubject(FailureMetadata failureMetadata, String subject) {
+    super(failureMetadata, subject);
+    this.actual = subject;
   }
 
   /**
@@ -142,17 +147,17 @@ final class DaggerModuleMethodSubject extends Subject<DaggerModuleMethodSubject,
   void hasError(String errorSubstring) {
     String source = moduleSource();
     JavaFileObject module = JavaFileObjects.forSourceLines("test.TestModule", source);
-    assertAbout(javaSources())
-        .that(FluentIterable.from(additionalSources).append(module))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining(errorSubstring)
-        .in(module)
+    Compilation compilation =
+        daggerCompiler().compile(FluentIterable.from(additionalSources).append(module));
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining(errorSubstring)
+        .inFile(module)
         .onLine(methodLine(source));
   }
 
   private int methodLine(String source) {
-    String beforeMethod = source.substring(0, source.indexOf(actual()));
+    String beforeMethod = source.substring(0, source.indexOf(actual));
     int methodLine = 1;
     for (int nextNewlineIndex = beforeMethod.indexOf('\n');
         nextNewlineIndex >= 0;
@@ -171,7 +176,7 @@ final class DaggerModuleMethodSubject extends Subject<DaggerModuleMethodSubject,
       writer.println(importLine);
     }
     writer.println();
-    writer.printf(declaration, "TestModule", "\n" + actual() + "\n");
+    writer.printf(declaration, "TestModule", "\n" + actual + "\n");
     writer.println();
     return stringWriter.toString();
   }

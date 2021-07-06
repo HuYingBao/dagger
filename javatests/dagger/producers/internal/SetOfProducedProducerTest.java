@@ -23,6 +23,7 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
 import dagger.producers.Produced;
 import dagger.producers.Producer;
+import dagger.producers.Producers;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Set;
@@ -72,7 +73,8 @@ public class SetOfProducedProducerTest {
     Results<Integer> results = Results.create(producer.get().get());
     assertThat(results.successes).isEmpty();
     assertThat(results.failures).hasSize(1);
-    assertThat(Iterables.getOnlyElement(results.failures).getCause())
+    assertThat(Iterables.getOnlyElement(results.failures))
+        .hasCauseThat()
         .isInstanceOf(NullPointerException.class);
   }
 
@@ -85,7 +87,8 @@ public class SetOfProducedProducerTest {
     Results<Integer> results = Results.create(producer.get().get());
     assertThat(results.successes).isEmpty();
     assertThat(results.failures).hasSize(1);
-    assertThat(Iterables.getOnlyElement(results.failures).getCause())
+    assertThat(Iterables.getOnlyElement(results.failures))
+        .hasCauseThat()
         .isInstanceOf(NullPointerException.class);
   }
 
@@ -99,7 +102,8 @@ public class SetOfProducedProducerTest {
     Results<Integer> results = Results.create(producer.get().get());
     assertThat(results.successes).isEmpty();
     assertThat(results.failures).hasSize(1);
-    assertThat(Iterables.getOnlyElement(results.failures).getCause())
+    assertThat(Iterables.getOnlyElement(results.failures))
+        .hasCauseThat()
         .isInstanceOf(NullPointerException.class);
   }
 
@@ -114,7 +118,8 @@ public class SetOfProducedProducerTest {
     Results<Integer> results = Results.create(producer.get().get());
     assertThat(results.successes).containsExactly(2, 5);
     assertThat(results.failures).hasSize(1);
-    assertThat(Iterables.getOnlyElement(results.failures).getCause())
+    assertThat(Iterables.getOnlyElement(results.failures))
+        .hasCauseThat()
         .isInstanceOf(NullPointerException.class);
   }
 

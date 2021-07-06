@@ -15,13 +15,17 @@
 # Description:
 #   Public Dagger API for Android
 
-package(default_visibility = ["//:src"])
-
+load("@rules_java//java:defs.bzl", "java_library", "java_plugin")
 load(
     "//:build_defs.bzl",
     "DOCLINT_HTML_AND_SYNTAX",
     "DOCLINT_REFERENCES",
+    "POM_VERSION",
 )
+load("//tools:maven.bzl", "pom_file")
+load("@google_bazel_common//tools/javadoc:javadoc.bzl", "javadoc_library")
+
+package(default_visibility = ["//:src"])
 
 filegroup(
     name = "srcs",
@@ -32,18 +36,26 @@ java_library(
     name = "processor",
     srcs = [":srcs"],
     javacopts = DOCLINT_HTML_AND_SYNTAX + DOCLINT_REFERENCES,
+    tags = ["maven_coordinates=com.google.dagger:dagger-android-processor:" + POM_VERSION],
     deps = [
-        "//third_party:guava",
-        "//third_party:auto_service",
-        "//third_party:auto_value",
-        "//third_party:auto_common",
-        "//third_party:javapoet",
-        "//third_party:google_java_format",
         "//java/dagger:core",
-        # https://github.com/bazelbuild/bazel/issues/2517
-        "//java/dagger/android:libandroid.jar",
-        "//java/dagger/android/support:libsupport.jar",
+        "//java/dagger/internal/guava:base",
+        "//java/dagger/internal/guava:collect",
+        "//java/dagger/spi",
+        "@google_bazel_common//third_party/java/auto:common",
+        "@google_bazel_common//third_party/java/auto:service",
+        "@google_bazel_common//third_party/java/auto:value",
+        "@google_bazel_common//third_party/java/google_java_format",
+        "@google_bazel_common//third_party/java/incap",
+        "@google_bazel_common//third_party/java/javapoet",
     ],
+)
+
+pom_file(
+    name = "pom",
+    artifact_id = "dagger-android-processor",
+    artifact_name = "Dagger Android Processor",
+    targets = [":processor"],
 )
 
 java_plugin(
@@ -52,8 +64,6 @@ java_plugin(
     processor_class = "dagger.android.processor.AndroidProcessor",
     deps = [":processor"],
 )
-
-load("//tools:javadoc.bzl", "javadoc_library")
 
 javadoc_library(
     name = "processor-javadoc",

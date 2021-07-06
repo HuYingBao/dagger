@@ -15,14 +15,10 @@
 # Description:
 #   Functional tests for Dagger
 
-package(default_visibility = ["//:src"])
-
-load(
-    "//:build_defs.bzl",
-    "DOCLINT_HTML_AND_SYNTAX",
-    "SOURCE_7_TARGET_7",
-)
+load("//:build_defs.bzl", "DOCLINT_HTML_AND_SYNTAX", "SOURCE_7_TARGET_7")
 load("//:test_defs.bzl", "GenJavaTests")
+
+package(default_visibility = ["//:src"])
 
 GenJavaTests(
     name = "functional_tests",
@@ -31,18 +27,20 @@ GenJavaTests(
     ),
     javacopts = DOCLINT_HTML_AND_SYNTAX,
     lib_javacopts = SOURCE_7_TARGET_7,
+    test_only_deps = [
+        "//java/dagger/internal/guava:base",
+        "//java/dagger/internal/guava:collect",
+        "//java/dagger/internal/guava:concurrent",
+        "@google_bazel_common//third_party/java/guava:testlib",
+        "@google_bazel_common//third_party/java/truth",
+        "@google_bazel_common//third_party/java/junit",
+    ],
     # NOTE: This should not depend on Guava or jsr305 to ensure that Dagger can be
     # used without Guava and jsr305 deps.
-    test_only_deps = [
-        "//third_party:guava_testlib",
-        "//third_party:guava",
-        "//third_party:truth",
-        "//third_party:junit",
-    ],
     deps = [
         "//:dagger_with_compiler",
-        "//third_party:auto_factory",
-        "//third_party:auto_value",
-        "//third_party:jsr330_inject",
+        "@google_bazel_common//third_party/java/auto:factory",
+        "@google_bazel_common//third_party/java/auto:value",
+        "@google_bazel_common//third_party/java/jsr330_inject",
     ],
 )

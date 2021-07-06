@@ -20,50 +20,74 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.fail;
 
 import android.app.Activity;
-import org.robolectric.RobolectricTestRunner;
+import android.os.Build;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import com.google.common.collect.ImmutableMap;
+import dagger.android.AndroidInjector.Factory;
 import dagger.android.DispatchingAndroidInjector.InvalidInjectorBindingException;
-import java.util.HashMap;
 import java.util.Map;
 import javax.inject.Provider;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.annotation.Config;
 
-@Config(manifest = Config.NONE)
-@RunWith(RobolectricTestRunner.class)
+@RunWith(AndroidJUnit4.class)
+// Robolectric requires Java9 to run API 29 and above, so use API 28 instead
+@Config(sdk = Build.VERSION_CODES.P)
 public final class DispatchingAndroidInjectorTest {
-  private DispatchingAndroidInjector<Activity> dispatchingAndroidInjector;
+  @Test
+  public void withClassKeys() {
+    DispatchingAndroidInjector<Activity> dispatchingAndroidInjector =
+        newDispatchingAndroidInjector(
+            ImmutableMap.of(FooActivity.class, FooInjector.Factory::new), ImmutableMap.of());
 
-  @Before
-  public void setup() {
-    Map<Class<? extends Activity>, Provider<AndroidInjector.Factory<? extends Activity>>>
-        injectorFactories = new HashMap<>();
-    injectorFactories.put(FooActivity.class, FooInjector.Factory::new);
-    injectorFactories.put(ReturnsNullActivity.class, () -> null);
-    injectorFactories.put(WrongActivity.class, FooInjector.Factory::new);
-    dispatchingAndroidInjector = new DispatchingAndroidInjector<>(injectorFactories);
+    FooActivity activity = Robolectric.setupActivity(FooActivity.class);
+    assertThat(dispatchingAndroidInjector.maybeInject(activity)).isTrue();
   }
 
   @Test
-  public void maybeInject_returnsTrue_ifMatchingInjectorExists() {
+  public void withStringKeys() {
+    DispatchingAndroidInjector<Activity> dispatchingAndroidInjector =
+        newDispatchingAndroidInjector(
+            ImmutableMap.of(),
+            ImmutableMap.of(FooActivity.class.getName(), FooInjector.Factory::new));
+
+    FooActivity activity = Robolectric.setupActivity(FooActivity.class);
+    assertThat(dispatchingAndroidInjector.maybeInject(activity)).isTrue();
+  }
+
+  @Test
+  public void withMixedKeys() {
+    DispatchingAndroidInjector<Activity> dispatchingAndroidInjector =
+        newDispatchingAndroidInjector(
+            ImmutableMap.of(FooActivity.class, FooInjector.Factory::new),
+            ImmutableMap.of(BarActivity.class.getName(), BarInjector.Factory::new));
+
     FooActivity fooActivity = Robolectric.setupActivity(FooActivity.class);
     assertThat(dispatchingAndroidInjector.maybeInject(fooActivity)).isTrue();
+    BarActivity barActivity = Robolectric.setupActivity(BarActivity.class);
+    assertThat(dispatchingAndroidInjector.maybeInject(barActivity)).isTrue();
   }
 
   @Test
   public void maybeInject_returnsFalse_ifNoMatchingInjectorExists() {
-    BarActivity barActivity = Robolectric.setupActivity(BarActivity.class);
-    assertThat(dispatchingAndroidInjector.maybeInject(barActivity)).isFalse();
+    DispatchingAndroidInjector<Activity> dispatchingAndroidInjector =
+        newDispatchingAndroidInjector(ImmutableMap.of(), ImmutableMap.of());
+
+    BarActivity activity = Robolectric.setupActivity(BarActivity.class);
+    assertThat(dispatchingAndroidInjector.maybeInject(activity)).isFalse();
   }
 
   @Test
   public void throwsIfFactoryCreateReturnsNull() {
-    ReturnsNullActivity returnsNullActivity = Robolectric.setupActivity(ReturnsNullActivity.class);
+    DispatchingAndroidInjector<Activity> dispatchingAndroidInjector =
+        newDispatchingAndroidInjector(
+            ImmutableMap.of(FooActivity.class, () -> null), ImmutableMap.of());
+    FooActivity activity = Robolectric.setupActivity(FooActivity.class);
 
     try {
-      dispatchingAndroidInjector.maybeInject(returnsNullActivity);
+      dispatchingAndroidInjector.maybeInject(activity);
       fail("Expected NullPointerException");
     } catch (NullPointerException expected) {
     }
@@ -71,22 +95,29 @@ public final class DispatchingAndroidInjectorTest {
 
   @Test
   public void throwsIfClassMismatched() {
-    WrongActivity wrongActivity = Robolectric.setupActivity(WrongActivity.class);
+    DispatchingAndroidInjector<Activity> dispatchingAndroidInjector =
+        newDispatchingAndroidInjector(
+            ImmutableMap.of(FooActivity.class, BarInjector.Factory::new), ImmutableMap.of());
+    FooActivity activity = Robolectric.setupActivity(FooActivity.class);
 
     try {
-      dispatchingAndroidInjector.maybeInject(wrongActivity);
+      dispatchingAndroidInjector.maybeInject(activity);
       fail("Expected InvalidInjectorBindingException");
     } catch (InvalidInjectorBindingException expected) {
     }
   }
 
+  private static <T> DispatchingAndroidInjector<T> newDispatchingAndroidInjector(
+      Map<Class<?>, Provider<Factory<?>>> injectorFactoriesWithClassKeys,
+      Map<String, Provider<AndroidInjector.Factory<?>>>
+          injectorFactoriesWithStringKeys) {
+    return new DispatchingAndroidInjector<>(
+        injectorFactoriesWithClassKeys, injectorFactoriesWithStringKeys);
+  }
+
   static class FooActivity extends Activity {}
 
   static class BarActivity extends Activity {}
-
-  static class ReturnsNullActivity extends Activity {}
-
-  static class WrongActivity extends Activity {}
 
   static class FooInjector implements AndroidInjector<FooActivity> {
     @Override
@@ -96,6 +127,18 @@ public final class DispatchingAndroidInjectorTest {
       @Override
       public AndroidInjector<FooActivity> create(FooActivity activity) {
         return new FooInjector();
+      }
+    }
+  }
+
+  static class BarInjector implements AndroidInjector<BarActivity> {
+    @Override
+    public void inject(BarActivity instance) {}
+
+    static class Factory implements AndroidInjector.Factory<BarActivity> {
+      @Override
+      public AndroidInjector<BarActivity> create(BarActivity activity) {
+        return new BarInjector();
       }
     }
   }

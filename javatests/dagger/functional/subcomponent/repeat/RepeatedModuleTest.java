@@ -37,7 +37,7 @@ public final class RepeatedModuleTest {
   public void repeatedModuleHasSameStateInSubcomponent() {
     SubcomponentWithRepeatedModule childComponent =
         parentComponent.newChildComponentBuilder().build();
-    assertThat(parentComponent.state()).isSameAs(childComponent.state());
+    assertThat(parentComponent.state()).isSameInstanceAs(childComponent.state());
   }
 
   @Test
@@ -46,7 +46,7 @@ public final class RepeatedModuleTest {
         parentComponent.newChildComponentWithoutRepeatedModule();
     SubcomponentWithRepeatedModule grandchildComponent =
         childComponent.newGrandchildBuilder().build();
-    assertThat(parentComponent.state()).isSameAs(grandchildComponent.state());
+    assertThat(parentComponent.state()).isSameInstanceAs(grandchildComponent.state());
   }
 
   @Test
@@ -58,7 +58,8 @@ public final class RepeatedModuleTest {
       fail();
     } catch (UnsupportedOperationException expected) {
       assertThat(expected)
-          .hasMessage(
+          .hasMessageThat()
+          .isEqualTo(
               "dagger.functional.subcomponent.repeat.RepeatedModule cannot be set "
                   + "because it is inherited from the enclosing component");
     }
@@ -75,7 +76,8 @@ public final class RepeatedModuleTest {
       fail();
     } catch (UnsupportedOperationException expected) {
       assertThat(expected)
-          .hasMessage(
+          .hasMessageThat()
+          .isEqualTo(
               "dagger.functional.subcomponent.repeat.RepeatedModule cannot be set "
                   + "because it is inherited from the enclosing component");
     }

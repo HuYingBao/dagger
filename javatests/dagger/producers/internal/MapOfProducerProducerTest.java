@@ -20,6 +20,7 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.fail;
 
 import dagger.producers.Producer;
+import dagger.producers.Producers;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import org.junit.Test;
@@ -60,7 +61,7 @@ public final class MapOfProducerProducerTest {
       map.get(42).get().get();
       fail();
     } catch (ExecutionException e) {
-      assertThat(e.getCause()).isSameAs(cause);
+      assertThat(e).hasCauseThat().isSameInstanceAs(cause);
     }
   }
 }

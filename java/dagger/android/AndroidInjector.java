@@ -16,7 +16,6 @@
 
 package dagger.android;
 
-import com.google.errorprone.annotations.DoNotMock;
 import dagger.BindsInstance;
 import dagger.internal.Beta;
 
@@ -26,15 +25,14 @@ import dagger.internal.Beta;
  * android.app.Activity} or {@link android.app.Fragment}).
  *
  * <p>Commonly implemented by {@link dagger.Subcomponent}-annotated types whose {@link
- * dagger.Subcomponent.Builder} extends {@link Builder}.
+ * dagger.Subcomponent.Factory} extends {@link Factory}.
  *
  * @param <T> a concrete subtype of a core Android type
  * @see AndroidInjection
  * @see DispatchingAndroidInjector
+ * @see ContributesAndroidInjector
  */
 @Beta
-@DoNotMock(
-    "Faked versions of AndroidInjector are much clearer than a mock. See https://google.github.io/dagger/testing")
 public interface AndroidInjector<T> {
 
   /** Injects the members of {@code instance}. */
@@ -45,13 +43,12 @@ public interface AndroidInjector<T> {
    *
    * @param <T> the concrete type to be injected
    */
-  @DoNotMock
   interface Factory<T> {
     /**
      * Creates an {@link AndroidInjector} for {@code instance}. This should be the same instance
      * that will be passed to {@link #inject(Object)}.
      */
-    AndroidInjector<T> create(T instance);
+    AndroidInjector<T> create(@BindsInstance T instance);
   }
 
   /**
@@ -59,8 +56,10 @@ public interface AndroidInjector<T> {
    * Factory}.
    *
    * @param <T> the concrete type to be injected
+   * @deprecated Prefer {@link Factory} now that components can have {@link dagger.Component.Factory
+   *     factories} instead of builders
    */
-  @DoNotMock
+  @Deprecated
   abstract class Builder<T> implements AndroidInjector.Factory<T> {
     @Override
     public final AndroidInjector<T> create(T instance) {

@@ -18,28 +18,17 @@
 package dagger.internal.codegen;
 
 import static com.google.common.truth.Truth.assertAbout;
+import static com.google.testing.compile.CompilationSubject.assertThat;
 import static com.google.testing.compile.JavaSourceSubjectFactory.javaSource;
-import static com.google.testing.compile.JavaSourcesSubjectFactory.javaSources;
+import static dagger.internal.codegen.Compilers.daggerCompiler;
 import static dagger.internal.codegen.DaggerModuleMethodSubject.Factory.assertThatMethodInUnannotatedClass;
 import static dagger.internal.codegen.DaggerModuleMethodSubject.Factory.assertThatProductionModuleMethod;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_ABSTRACT;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_MULTIPLE_QUALIFIERS;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_MUST_NOT_BIND_FRAMEWORK_TYPES;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_MUST_RETURN_A_VALUE;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_NOT_IN_MODULE;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_PRIVATE;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_SET_VALUES_RAW_SET;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_TYPE_PARAMETER;
-import static dagger.internal.codegen.ErrorMessages.BINDING_METHOD_WITH_SAME_NAME;
-import static dagger.internal.codegen.ErrorMessages.PRODUCES_METHOD_RAW_FUTURE;
-import static dagger.internal.codegen.ErrorMessages.PRODUCES_METHOD_RETURN_TYPE;
-import static dagger.internal.codegen.ErrorMessages.PRODUCES_METHOD_SCOPE;
-import static dagger.internal.codegen.ErrorMessages.PRODUCES_METHOD_SET_VALUES_RETURN_SET;
-import static dagger.internal.codegen.GeneratedLines.GENERATED_ANNOTATION;
+import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.testing.compile.Compilation;
 import com.google.testing.compile.JavaFileObjects;
+import java.lang.annotation.Retention;
 import javax.inject.Qualifier;
 import javax.tools.JavaFileObject;
 import org.junit.Test;
@@ -49,98 +38,95 @@ import org.junit.runners.JUnit4;
 @RunWith(JUnit4.class)
 public class ProducerModuleFactoryGeneratorTest {
 
-  private String formatErrorMessage(String msg) {
-    return String.format(msg, "Produces");
-  }
-
-  private String formatModuleErrorMessage(String msg) {
-    return String.format(msg, "Produces", "ProducerModule");
-  }
-
   @Test public void producesMethodNotInModule() {
     assertThatMethodInUnannotatedClass("@Produces String produceString() { return null; }")
-        .hasError(formatModuleErrorMessage(BINDING_METHOD_NOT_IN_MODULE));
+        .hasError("@Produces methods can only be present within a @ProducerModule");
   }
 
   @Test public void producesMethodAbstract() {
     assertThatProductionModuleMethod("@Produces abstract String produceString();")
-        .hasError(formatErrorMessage(BINDING_METHOD_ABSTRACT));
+        .hasError("@Produces methods cannot be abstract");
   }
 
   @Test public void producesMethodPrivate() {
     assertThatProductionModuleMethod("@Produces private String produceString() { return null; }")
-        .hasError(formatErrorMessage(BINDING_METHOD_PRIVATE));
+        .hasError("@Produces methods cannot be private");
   }
 
   @Test public void producesMethodReturnVoid() {
     assertThatProductionModuleMethod("@Produces void produceNothing() {}")
-        .hasError(formatErrorMessage(BINDING_METHOD_MUST_RETURN_A_VALUE));
+        .hasError("@Produces methods must return a value (not void)");
   }
 
   @Test
   public void producesProvider() {
     assertThatProductionModuleMethod("@Produces Provider<String> produceProvider() {}")
-        .hasError(formatErrorMessage(BINDING_METHOD_MUST_NOT_BIND_FRAMEWORK_TYPES));
+        .hasError("@Produces methods must not return framework types");
   }
 
   @Test
   public void producesLazy() {
     assertThatProductionModuleMethod("@Produces Lazy<String> produceLazy() {}")
-        .hasError(formatErrorMessage(BINDING_METHOD_MUST_NOT_BIND_FRAMEWORK_TYPES));
+        .hasError("@Produces methods must not return framework types");
   }
 
   @Test
   public void producesMembersInjector() {
     assertThatProductionModuleMethod(
             "@Produces MembersInjector<String> produceMembersInjector() {}")
-        .hasError(formatErrorMessage(BINDING_METHOD_MUST_NOT_BIND_FRAMEWORK_TYPES));
+        .hasError("@Produces methods must not return framework types");
   }
 
   @Test
   public void producesProducer() {
     assertThatProductionModuleMethod("@Produces Producer<String> produceProducer() {}")
-        .hasError(formatErrorMessage(BINDING_METHOD_MUST_NOT_BIND_FRAMEWORK_TYPES));
+        .hasError("@Produces methods must not return framework types");
   }
 
   @Test
   public void producesProduced() {
     assertThatProductionModuleMethod("@Produces Produced<String> produceProduced() {}")
-        .hasError(formatErrorMessage(BINDING_METHOD_MUST_NOT_BIND_FRAMEWORK_TYPES));
+        .hasError("@Produces methods must not return framework types");
   }
 
   @Test public void producesMethodReturnRawFuture() {
     assertThatProductionModuleMethod("@Produces ListenableFuture produceRaw() {}")
         .importing(ListenableFuture.class)
-        .hasError(PRODUCES_METHOD_RAW_FUTURE);
+        .hasError("@Produces methods cannot return a raw ListenableFuture");
   }
 
   @Test public void producesMethodReturnWildcardFuture() {
     assertThatProductionModuleMethod("@Produces ListenableFuture<?> produceRaw() {}")
         .importing(ListenableFuture.class)
-        .hasError(PRODUCES_METHOD_RETURN_TYPE);
+        .hasError(
+            "@Produces methods can return only a primitive, an array, a type variable, "
+                + "a declared type, or a ListenableFuture of one of those types");
   }
 
   @Test public void producesMethodWithTypeParameter() {
     assertThatProductionModuleMethod("@Produces <T> String produceString() { return null; }")
-        .hasError(formatErrorMessage(BINDING_METHOD_TYPE_PARAMETER));
+        .hasError("@Produces methods may not have type parameters");
   }
 
   @Test public void producesMethodSetValuesWildcard() {
     assertThatProductionModuleMethod(
             "@Produces @ElementsIntoSet Set<?> produceWildcard() { return null; }")
-        .hasError(PRODUCES_METHOD_RETURN_TYPE);
+        .hasError(
+            "@Produces methods can return only a primitive, an array, a type variable, "
+                + "a declared type, or a ListenableFuture of one of those types");
   }
 
   @Test public void producesMethodSetValuesRawSet() {
     assertThatProductionModuleMethod(
             "@Produces @ElementsIntoSet Set produceSomething() { return null; }")
-        .hasError(formatErrorMessage(BINDING_METHOD_SET_VALUES_RAW_SET));
+        .hasError("@Produces methods annotated with @ElementsIntoSet cannot return a raw Set");
   }
 
   @Test public void producesMethodSetValuesNotASet() {
     assertThatProductionModuleMethod(
             "@Produces @ElementsIntoSet List<String> produceStrings() { return null; }")
-        .hasError(PRODUCES_METHOD_SET_VALUES_RETURN_SET);
+        .hasError(
+            "@Produces methods of type set values must return a Set or ListenableFuture of Set");
   }
 
   @Test public void producesMethodSetValuesWildcardInFuture() {
@@ -148,14 +134,16 @@ public class ProducerModuleFactoryGeneratorTest {
             "@Produces @ElementsIntoSet "
                 + "ListenableFuture<Set<?>> produceWildcard() { return null; }")
         .importing(ListenableFuture.class)
-        .hasError(PRODUCES_METHOD_RETURN_TYPE);
+        .hasError(
+            "@Produces methods can return only a primitive, an array, a type variable, "
+                + "a declared type, or a ListenableFuture of one of those types");
   }
 
   @Test public void producesMethodSetValuesFutureRawSet() {
     assertThatProductionModuleMethod(
             "@Produces @ElementsIntoSet ListenableFuture<Set> produceSomething() { return null; }")
         .importing(ListenableFuture.class)
-        .hasError(formatErrorMessage(BINDING_METHOD_SET_VALUES_RAW_SET));
+        .hasError("@Produces methods annotated with @ElementsIntoSet cannot return a raw Set");
   }
 
   @Test public void producesMethodSetValuesFutureNotASet() {
@@ -163,7 +151,8 @@ public class ProducerModuleFactoryGeneratorTest {
             "@Produces @ElementsIntoSet "
                 + "ListenableFuture<List<String>> produceStrings() { return null; }")
         .importing(ListenableFuture.class)
-        .hasError(PRODUCES_METHOD_SET_VALUES_RETURN_SET);
+        .hasError(
+            "@Produces methods of type set values must return a Set or ListenableFuture of Set");
   }
 
   @Test public void multipleProducesMethodsWithSameName() {
@@ -183,12 +172,12 @@ public class ProducerModuleFactoryGeneratorTest {
         "    return \"\";",
         "  }",
         "}");
-    String errorMessage = String.format(BINDING_METHOD_WITH_SAME_NAME, "Produces");
-    assertAbout(javaSource()).that(moduleFile)
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining(errorMessage).in(moduleFile).onLine(8)
-        .and().withErrorContaining(errorMessage).in(moduleFile).onLine(12);
+    String errorMessage =
+        "Cannot have more than one binding method with the same name in a single module";
+    Compilation compilation = daggerCompiler().compile(moduleFile);
+    assertThat(compilation).failed();
+    assertThat(compilation).hadErrorContaining(errorMessage).inFile(moduleFile).onLine(8);
+    assertThat(compilation).hadErrorContaining(errorMessage).inFile(moduleFile).onLine(12);
   }
 
   @Test
@@ -201,7 +190,7 @@ public class ProducerModuleFactoryGeneratorTest {
 
   @Test public void producesMethodWithScope() {
     assertThatProductionModuleMethod("@Produces @Singleton String str() { return \"\"; }")
-        .hasError(PRODUCES_METHOD_SCOPE);
+        .hasError("@Produces methods cannot be scoped");
   }
 
   @Test
@@ -215,13 +204,14 @@ public class ProducerModuleFactoryGeneratorTest {
         "  @ProducerModule private static final class PrivateModule {",
         "  }",
         "}");
-    assertAbout(javaSource())
-        .that(moduleFile)
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining("Modules cannot be private.")
-        .in(moduleFile).onLine(6);
+    Compilation compilation = daggerCompiler().compile(moduleFile);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("Modules cannot be private")
+        .inFile(moduleFile)
+        .onLine(6);
   }
+
 
   @Test
   public void enclosedInPrivateModule() {
@@ -236,12 +226,12 @@ public class ProducerModuleFactoryGeneratorTest {
         "    }",
         "  }",
         "}");
-    assertAbout(javaSource())
-        .that(moduleFile)
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining("Modules cannot be enclosed in private types.")
-        .in(moduleFile).onLine(7);
+    Compilation compilation = daggerCompiler().compile(moduleFile);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining("Modules cannot be enclosed in private types")
+        .inFile(moduleFile)
+        .onLine(7);
   }
 
   @Test
@@ -258,17 +248,15 @@ public class ProducerModuleFactoryGeneratorTest {
             "@ProducerModule(includes = X.class)",
             "public final class FooModule {",
             "}");
-    assertAbout(javaSources())
-        .that(ImmutableList.of(xFile, moduleFile))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            String.format(
-                ErrorMessages.REFERENCED_MODULE_NOT_ANNOTATED,
-                "X",
-                "one of @Module, @ProducerModule"));
+    Compilation compilation = daggerCompiler().compile(xFile, moduleFile);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining(
+            "X is listed as a module, but is not annotated with one of @Module, @ProducerModule");
   }
 
+  // TODO(ronshapiro): merge this with the equivalent test in ModuleFactoryGeneratorTest and make it
+  // parameterized
   @Test
   public void publicModuleNonPublicIncludes() {
     JavaFileObject publicModuleFile = JavaFileObjects.forSourceLines("test.PublicModule",
@@ -277,25 +265,37 @@ public class ProducerModuleFactoryGeneratorTest {
         "import dagger.producers.ProducerModule;",
         "",
         "@ProducerModule(includes = {",
-        "    NonPublicModule1.class, OtherPublicModule.class, NonPublicModule2.class",
+        "    BadNonPublicModule.class, OtherPublicModule.class, OkNonPublicModule.class",
         "})",
         "public final class PublicModule {",
         "}");
-    JavaFileObject nonPublicModule1File = JavaFileObjects.forSourceLines("test.NonPublicModule1",
+    JavaFileObject badNonPublicModuleFile =
+        JavaFileObjects.forSourceLines(
+            "test.BadNonPublicModule",
+            "package test;",
+            "",
+            "import dagger.producers.ProducerModule;",
+            "import dagger.producers.Produces;",
+            "",
+            "@ProducerModule",
+            "final class BadNonPublicModule {",
+            "  @Produces",
+            "  int produceInt() {",
+            "    return 42;",
+            "  }",
+            "}");
+    JavaFileObject okNonPublicModuleFile = JavaFileObjects.forSourceLines("test.OkNonPublicModule",
         "package test;",
         "",
         "import dagger.producers.ProducerModule;",
+        "import dagger.producers.Produces;",
         "",
         "@ProducerModule",
-        "final class NonPublicModule1 {",
-        "}");
-    JavaFileObject nonPublicModule2File = JavaFileObjects.forSourceLines("test.NonPublicModule2",
-        "package test;",
-        "",
-        "import dagger.producers.ProducerModule;",
-        "",
-        "@ProducerModule",
-        "final class NonPublicModule2 {",
+        "final class OkNonPublicModule {",
+        "  @Produces",
+        "  static String produceString() {",
+        "    return \"foo\";",
+        "  }",
         "}");
     JavaFileObject otherPublicModuleFile = JavaFileObjects.forSourceLines("test.OtherPublicModule",
         "package test;",
@@ -305,16 +305,22 @@ public class ProducerModuleFactoryGeneratorTest {
         "@ProducerModule",
         "public final class OtherPublicModule {",
         "}");
-    assertAbout(javaSources())
-        .that(ImmutableList.of(
-            publicModuleFile, nonPublicModule1File, nonPublicModule2File, otherPublicModuleFile))
-        .processedWith(new ComponentProcessor())
-        .failsToCompile()
-        .withErrorContaining("This module is public, but it includes non-public "
-            + "(or effectively non-public) modules. "
-            + "Either reduce the visibility of this module or make "
-            + "test.NonPublicModule1 and test.NonPublicModule2 public.")
-        .in(publicModuleFile).onLine(8);
+    Compilation compilation =
+        daggerCompiler()
+            .compile(
+                publicModuleFile,
+                badNonPublicModuleFile,
+                okNonPublicModuleFile,
+                otherPublicModuleFile);
+    assertThat(compilation).failed();
+    assertThat(compilation)
+        .hadErrorContaining(
+            "This module is public, but it includes non-public (or effectively non-public) modules "
+                + "(test.BadNonPublicModule) that have non-static, non-abstract binding methods. "
+                + "Either reduce the visibility of this module, make the included modules public, "
+                + "or make all of the binding methods on the included modules abstract or static.")
+        .inFile(publicModuleFile)
+        .onLine(8);
   }
 
   @Test public void argumentNamedModuleCompiles() {
@@ -330,10 +336,8 @@ public class ProducerModuleFactoryGeneratorTest {
         "    return null;",
         "  }",
         "}");
-    assertAbout(javaSource())
-        .that(moduleFile)
-        .processedWith(new ComponentProcessor())
-        .compilesWithoutError();
+    Compilation compilation = daggerCompiler().compile(moduleFile);
+    assertThat(compilation).succeeded();
   }
 
   @Test public void singleProducesMethodNoArgsFuture() {
@@ -355,64 +359,46 @@ public class ProducerModuleFactoryGeneratorTest {
             "TestModule_ProduceStringFactory",
             "package test;",
             "",
-            "import com.google.common.util.concurrent.AsyncFunction;",
-            "import com.google.common.util.concurrent.Futures;",
-            "import com.google.common.util.concurrent.ListenableFuture;",
-            "import dagger.producers.internal.AbstractProducer;",
-            "import dagger.producers.monitoring.ProducerToken;",
-            "import dagger.producers.monitoring.ProductionComponentMonitor;",
-            "import java.util.concurrent.Executor;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
+            GeneratedLines.generatedImports(
+                "import com.google.common.util.concurrent.Futures;",
+                "import com.google.common.util.concurrent.ListenableFuture;",
+                "import dagger.producers.internal.AbstractProducesMethodProducer;",
+                "import dagger.producers.monitoring.ProducerToken;",
+                "import dagger.producers.monitoring.ProductionComponentMonitor;",
+                "import java.util.concurrent.Executor;",
+                "import javax.inject.Provider;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotationsWithoutSuppressWarnings(),
+            "@SuppressWarnings({\"FutureReturnValueIgnored\", \"unchecked\", \"rawtypes\"})",
             "public final class TestModule_ProduceStringFactory",
-            "    extends AbstractProducer<String>",
-            "    implements AsyncFunction<Void, String>, Executor {",
+            "    extends AbstractProducesMethodProducer<Void, String> {",
             "  private final TestModule module;",
-            "  private final Provider<Executor> executorProvider;",
-            "  private final Provider<ProductionComponentMonitor> monitorProvider;",
             "",
-            "  public TestModule_ProduceStringFactory(",
+            "  private TestModule_ProduceStringFactory(",
             "      TestModule module,",
             "      Provider<Executor> executorProvider,",
-            "      Provider<ProductionComponentMonitor> monitorProvider) {",
+            "      Provider<ProductionComponentMonitor> productionComponentMonitorProvider) {",
             "    super(",
-            "        monitorProvider,",
-            "        ProducerToken.create(TestModule_ProduceStringFactory.class));",
-            "    assert module != null;",
+            "        productionComponentMonitorProvider,",
+            "        ProducerToken.create(TestModule_ProduceStringFactory.class),",
+            "        executorProvider);",
             "    this.module = module;",
-            "    assert executorProvider != null;",
-            "    this.executorProvider = executorProvider;",
-            "    assert monitorProvider != null;",
-            "    this.monitorProvider = monitorProvider;",
             "  }",
             "",
-            "  @Override protected ListenableFuture<String> compute() {",
-            "    return Futures.transformAsync(",
-            "        Futures.<Void>immediateFuture(null), this, this);",
+            "  public static TestModule_ProduceStringFactory create(",
+            "      TestModule module,",
+            "      Provider<Executor> executorProvider,",
+            "      Provider<ProductionComponentMonitor> productionComponentMonitorProvider) {",
+            "    return new TestModule_ProduceStringFactory(",
+            "        module, executorProvider, productionComponentMonitorProvider);",
             "  }",
             "",
-            "  @Deprecated",
-            "  @Override public ListenableFuture<String> apply(Void ignoredVoidArg) {",
-            "    assert monitor != null :",
-            "        \"apply() may only be called internally from compute(); \"",
-            "        + \"if it's called explicitly, the monitor might be null\";",
-            "    monitor.methodStarting();",
-            "    try {",
-            "      return TestModule_ProduceStringFactory.this.module.produceString();",
-            "    } finally {",
-            "      monitor.methodFinished();",
-            "    }",
+            "  @Override protected ListenableFuture<Void> collectDependencies() {",
+            "    return Futures.<Void>immediateFuture(null);",
             "  }",
             "",
-            "  @Deprecated",
-            "  @Override public void execute(Runnable runnable) {",
-            "    assert monitor != null :",
-            "        \"execute() may only be called internally from compute(); \"",
-            "        + \"if it's called explicitly, the monitor might be null\";",
-            "    monitor.ready();",
-            "    executorProvider.get().execute(runnable);",
+            "  @Override public ListenableFuture<String> callProducesMethod(Void ignoredVoidArg) {",
+            "    return module.produceString();",
             "  }",
             "}");
     assertAbout(javaSource())
@@ -446,64 +432,46 @@ public class ProducerModuleFactoryGeneratorTest {
             "TestModule_ProduceStringFactory",
             "package test;",
             "",
-            "import com.google.common.util.concurrent.AsyncFunction;",
-            "import com.google.common.util.concurrent.Futures;",
-            "import com.google.common.util.concurrent.ListenableFuture;",
-            "import dagger.producers.internal.AbstractProducer;",
-            "import dagger.producers.monitoring.ProducerToken;",
-            "import dagger.producers.monitoring.ProductionComponentMonitor;",
-            "import java.util.concurrent.Executor;",
-            "import javax.annotation.Generated;",
-            "import javax.inject.Provider;",
+            GeneratedLines.generatedImports(
+                "import com.google.common.util.concurrent.Futures;",
+                "import com.google.common.util.concurrent.ListenableFuture;",
+                "import dagger.producers.internal.AbstractProducesMethodProducer;",
+                "import dagger.producers.monitoring.ProducerToken;",
+                "import dagger.producers.monitoring.ProductionComponentMonitor;",
+                "import java.util.concurrent.Executor;",
+                "import javax.inject.Provider;"),
             "",
-            GENERATED_ANNOTATION,
+            GeneratedLines.generatedAnnotationsWithoutSuppressWarnings(),
+            "@SuppressWarnings({\"FutureReturnValueIgnored\", \"unchecked\", \"rawtypes\"})",
             "public final class TestModule_ProduceStringFactory",
-            "    extends AbstractProducer<String>",
-            "    implements AsyncFunction<Void, String>, Executor {",
+            "    extends AbstractProducesMethodProducer<Void, String> {",
             "  private final TestModule module;",
-            "  private final Provider<Executor> executorProvider;",
-            "  private final Provider<ProductionComponentMonitor> monitorProvider;",
             "",
-            "  public TestModule_ProduceStringFactory(",
+            "  private TestModule_ProduceStringFactory(",
             "      TestModule module,",
             "      Provider<Executor> executorProvider,",
-            "      Provider<ProductionComponentMonitor> monitorProvider) {",
+            "      Provider<ProductionComponentMonitor> productionComponentMonitorProvider) {",
             "    super(",
-            "        monitorProvider,",
-            "        ProducerToken.create(\"test.TestModule#produceString\"));",
-            "    assert module != null;",
+            "        productionComponentMonitorProvider,",
+            "        ProducerToken.create(\"test.TestModule#produceString\"),",
+            "        executorProvider);",
             "    this.module = module;",
-            "    assert executorProvider != null;",
-            "    this.executorProvider = executorProvider;",
-            "    assert monitorProvider != null;",
-            "    this.monitorProvider = monitorProvider;",
             "  }",
             "",
-            "  @Override protected ListenableFuture<String> compute() {",
-            "    return Futures.transformAsync(",
-            "      Futures.<Void>immediateFuture(null), this, this);",
+            "  public static TestModule_ProduceStringFactory create(",
+            "      TestModule module,",
+            "      Provider<Executor> executorProvider,",
+            "      Provider<ProductionComponentMonitor> productionComponentMonitorProvider) {",
+            "    return new TestModule_ProduceStringFactory(",
+            "        module, executorProvider, productionComponentMonitorProvider);",
             "  }",
             "",
-            "  @Deprecated",
-            "  @Override public ListenableFuture<String> apply(Void ignoredVoidArg) {",
-            "    assert monitor != null :",
-            "        \"apply() may only be called internally from compute(); \"",
-            "        + \"if it's called explicitly, the monitor might be null\";",
-            "    monitor.methodStarting();",
-            "    try {",
-            "      return TestModule_ProduceStringFactory.this.module.produceString();",
-            "    } finally {",
-            "      monitor.methodFinished();",
-            "    }",
+            "  @Override protected ListenableFuture<Void> collectDependencies() {",
+            "    return Futures.<Void>immediateFuture(null);",
             "  }",
             "",
-            "  @Deprecated",
-            "  @Override public void execute(Runnable runnable) {",
-            "    assert monitor != null :",
-            "        \"execute() may only be called internally from compute(); \"",
-            "        + \"if it's called explicitly, the monitor might be null\";",
-            "    monitor.ready();",
-            "    executorProvider.get().execute(runnable);",
+            "  @Override public ListenableFuture<String> callProducesMethod(Void ignoredVoidArg) {",
+            "    return module.produceString();",
             "  }",
             "}");
     assertAbout(javaSource())
@@ -515,16 +483,39 @@ public class ProducerModuleFactoryGeneratorTest {
         .generatesSources(factoryFile);
   }
 
-  @Test public void producesMethodMultipleQualifiers() {
+  @Test
+  public void producesMethodMultipleQualifiersOnMethod() {
     assertThatProductionModuleMethod(
-            "@Produces @QualifierA @QualifierB abstract String produceString() { return null; }")
+            "@Produces @QualifierA @QualifierB static String produceString() { return null; }")
         .importing(ListenableFuture.class, QualifierA.class, QualifierB.class)
-        .hasError(BINDING_METHOD_MULTIPLE_QUALIFIERS);
+        .hasError("may not use more than one @Qualifier");
   }
-  
+
+  @Test
+  public void producesMethodMultipleQualifiersOnParameter() {
+    assertThatProductionModuleMethod(
+            "@Produces static String produceString(@QualifierA @QualifierB Object input) "
+                + "{ return null; }")
+        .importing(ListenableFuture.class, QualifierA.class, QualifierB.class)
+        .hasError("may not use more than one @Qualifier");
+  }
+
+  @Test
+  public void producesMethodWildcardDependency() {
+    assertThatProductionModuleMethod(
+            "@Produces static String produceString(Provider<? extends Number> numberProvider) "
+                + "{ return null; }")
+        .importing(ListenableFuture.class, QualifierA.class, QualifierB.class)
+        .hasError(
+            "Dagger does not support injecting Provider<T>, Lazy<T>, Producer<T>, or Produced<T> "
+                + "when T is a wildcard type such as ? extends java.lang.Number");
+  }
+
   @Qualifier
+  @Retention(RUNTIME)
   public @interface QualifierA {}
 
   @Qualifier
+  @Retention(RUNTIME)
   public @interface QualifierB {}
 }

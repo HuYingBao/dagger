@@ -17,15 +17,19 @@
 package dagger.functional.cycle;
 
 import static com.google.common.truth.Truth.assertThat;
+import static com.google.common.truth.Truth.assertWithMessage;
+import static com.google.common.truth.TruthJUnit.assume;
+import static java.util.Arrays.stream;
 
 import dagger.functional.cycle.LongCycle.LongCycleComponent;
+import java.lang.reflect.Method;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
 @RunWith(JUnit4.class)
 public class LongCycleTest {
-  
+
   /**
    * Tests a cycle long enough that the real factory is created in a separate initialize method from
    * the delegate factory.
@@ -41,8 +45,14 @@ public class LongCycleTest {
    * factory is created in a separate method from the delegate factory.
    */
   @Test
-  public void longCycleHasMoreThanOneInitializeMethod() throws NoSuchMethodException {
-    DaggerLongCycle_LongCycleComponent.class
-        .getDeclaredMethod("initialize2", DaggerLongCycle_LongCycleComponent.Builder.class);
+  public void longCycleHasMoreThanOneInitializeMethod() {
+    assume().that(System.getProperty("dagger.mode")).doesNotContain("FastInit");
+    boolean hasInitialize2 =
+        stream(DaggerLongCycle_LongCycleComponent.class.getDeclaredMethods())
+            .map(Method::getName)
+            .anyMatch(name -> name.equals("initialize2"));
+    assertWithMessage("LongCycleComponent impl has an initialize2 method")
+        .that(hasInitialize2)
+        .isTrue();
   }
 }

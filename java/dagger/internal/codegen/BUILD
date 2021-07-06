@@ -15,54 +15,126 @@
 # Description:
 #   A JSR-330 compliant dependency injection system for android and java
 
+load("@rules_java//java:defs.bzl", "java_library", "java_plugin")
+load(
+    "//:build_defs.bzl",
+    "POM_VERSION",
+)
+load("//tools:maven.bzl", "gen_maven_artifact")
+
 package(default_visibility = ["//:src"])
 
-load("//:build_defs.bzl", "DOCLINT_HTML_AND_SYNTAX", "DOCLINT_REFERENCES")
-
-CODEGEN_SRCS = glob(
-    ["*.java"],
-)
-
-CODEGEN_PLUGINS = [
-    # TODO(cgruber): Enable Beta checker.
-]
-
-CODEGEN_SHARED_DEPS = [
-    "//third_party:auto_service",
-    "//third_party:auto_value",
-    "//third_party:auto_common",
-    "//third_party:error_prone_annotations",
-    "//third_party:google_java_format",
-    "//third_party:javapoet",
-    "@local_jdk//:lib/tools.jar",
-    "//third_party:jsr305_annotations",
-    "//third_party:jsr330_inject",
-    "//java/dagger:core",
-    "//java/dagger/producers",
-]
-
 java_library(
-    name = "codegen",
-    srcs = CODEGEN_SRCS,
-    javacopts = DOCLINT_HTML_AND_SYNTAX + DOCLINT_REFERENCES,
-    plugins = CODEGEN_PLUGINS,
-    deps = CODEGEN_SHARED_DEPS + [
-        "//third_party:guava",
+    name = "processor",
+    srcs = glob(
+        ["*.java"],
+        exclude = ["package-info.java"],
+    ),
+    plugins = [
+        "//java/dagger/internal/codegen/bootstrap",
+    ],
+    tags = ["maven_coordinates=com.google.dagger:dagger-compiler:" + POM_VERSION],
+    exports = [
+        "@google_bazel_common//third_party/java/jsr250_annotations",  # Export for @Generated
+    ],
+    deps = [
+        ":package_info",
+        "//java/dagger:core",
+        "//java/dagger/internal/codegen/base",
+        "//java/dagger/internal/codegen/binding",
+        "//java/dagger/internal/codegen/bindinggraphvalidation",
+        "//java/dagger/internal/codegen/compileroption",
+        "//java/dagger/internal/codegen/componentgenerator",
+        "//java/dagger/internal/codegen/extension",
+        "//java/dagger/internal/codegen/javapoet",
+        "//java/dagger/internal/codegen/kotlin",
+        "//java/dagger/internal/codegen/langmodel",
+        "//java/dagger/internal/codegen/validation",
+        "//java/dagger/internal/codegen/writing",
+        "//java/dagger/internal/codegen/xprocessing",
+        "//java/dagger/internal/guava:base",
+        "//java/dagger/internal/guava:collect",
+        "//java/dagger/spi",
+        "@google_bazel_common//third_party/java/auto:common",
+        "@google_bazel_common//third_party/java/auto:service",
+        "@google_bazel_common//third_party/java/auto:value",
+        "@google_bazel_common//third_party/java/error_prone:annotations",
+        "@google_bazel_common//third_party/java/google_java_format",
+        "@google_bazel_common//third_party/java/incap",
+        "@google_bazel_common//third_party/java/javapoet",
+        "@google_bazel_common//third_party/java/jsr330_inject",
     ],
 )
 
-load("//tools:javadoc.bzl", "javadoc_library")
+java_library(
+    name = "package_info",
+    srcs = ["package-info.java"],
+    tags = ["maven:merged"],
+    deps = ["@google_bazel_common//third_party/java/error_prone:annotations"],
+)
 
-javadoc_library(
-    name = "codegen-javadoc",
-    srcs = CODEGEN_SRCS,
-    root_packages = ["dagger.internal.codegen"],
-    deps = [":codegen"],
+gen_maven_artifact(
+    name = "artifact",
+    artifact_coordinates = "com.google.dagger:dagger-compiler:" + POM_VERSION,
+    artifact_name = "Dagger Compiler",
+    artifact_target = ":processor",
+    artifact_target_libs = [
+        ":package_info",
+        "//java/dagger/internal/codegen/base",
+        "//java/dagger/internal/codegen/base:shared",
+        "//java/dagger/internal/codegen/binding",
+        "//java/dagger/internal/codegen/bindinggraphvalidation",
+        "//java/dagger/internal/codegen/compileroption",
+        "//java/dagger/internal/codegen/componentgenerator",
+        "//java/dagger/internal/codegen/javapoet",
+        "//java/dagger/internal/codegen/kotlin",
+        "//java/dagger/internal/codegen/langmodel",
+        "//java/dagger/internal/codegen/validation",
+        "//java/dagger/internal/codegen/writing",
+    ],
+    artifact_target_maven_deps = [
+        "com.google.auto:auto-common",
+        "com.google.code.findbugs:jsr305",
+        "com.google.dagger:dagger-producers",
+        "com.google.dagger:dagger-spi",
+        "com.google.dagger:dagger",
+        "com.google.googlejavaformat:google-java-format",
+        "com.google.guava:failureaccess",
+        "com.google.guava:guava",
+        "com.squareup:javapoet",
+        "javax.annotation:jsr250-api",
+        "javax.inject:javax.inject",
+        "net.ltgt.gradle.incap:incap",
+        "org.checkerframework:checker-compat-qual",
+        "org.jetbrains.kotlin:kotlin-stdlib",
+        "org.jetbrains.kotlinx:kotlinx-metadata-jvm",
+    ],
+    javadoc_root_packages = ["dagger.internal.codegen"],
+    # The javadocs should only include ComponentProcessor.java, since that is the only class used
+    # externally. Specifically, ComponentProcessor.forTesting() is required for testing SPI plugins.
+    javadoc_srcs = ["ComponentProcessor.java"],
+    shaded_deps = [
+        "@com_google_auto_auto_common//jar",
+        "//java/dagger/internal/codegen/xprocessing",
+    ],
+    shaded_rules = [
+        "rule androidx.room.compiler.processing.** dagger.shaded.androidx.room.compiler.processing.@1",
+        "rule com.google.auto.common.** dagger.shaded.auto.common.@1",
+    ],
 )
 
 java_plugin(
     name = "component-codegen",
     generates_api = 1,
+    output_licenses = ["unencumbered"],
     processor_class = "dagger.internal.codegen.ComponentProcessor",
-    deps = [":codegen"],
+    tags = [
+        "annotation=dagger.Component;" +
+        "genclass=${package}.Dagger${outerclasses}${classname}",
+        "annotation=dagger.producers.ProductionComponent;" +
+        "genclass=${package}.Dagger${outerclasses}${classname}",
+        "annotation=dagger.MapKey;" +
+        "genclass=${package}.${outerclasses}${classname}Creator",
+    ],
+    deps = [":processor"],
 )

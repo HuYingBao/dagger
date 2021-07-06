@@ -56,8 +56,8 @@ public class BasicTest {
     assertThat(basicComponent.getInt()).isEqualTo(BOUND_INT);
     assertThat(basicComponent.getLong()).isEqualTo(BOUND_LONG);
     assertThat(basicComponent.getBoolean()).isEqualTo(BOUND_BOOLEAN);
-    assertThat(basicComponent.getFloat()).isWithin(0).of(BOUND_FLOAT);
-    assertThat(basicComponent.getDouble()).isWithin(0).of(BOUND_DOUBLE);
+    assertThat(basicComponent.getFloat()).isEqualTo(BOUND_FLOAT);
+    assertThat(basicComponent.getDouble()).isEqualTo(BOUND_DOUBLE);
   }
 
   @Theory public void boxedPrimitives(BasicComponent basicComponent) {
@@ -67,8 +67,8 @@ public class BasicTest {
     assertThat(basicComponent.getBoxedInt()).isEqualTo(new Integer(BOUND_INT));
     assertThat(basicComponent.getBoxedLong()).isEqualTo(new Long(BOUND_LONG));
     assertThat(basicComponent.getBoxedBoolean()).isEqualTo(new Boolean(BOUND_BOOLEAN));
-    assertThat(basicComponent.getBoxedFloat()).isWithin(0).of(BOUND_FLOAT);
-    assertThat(basicComponent.getBoxedDouble()).isWithin(0).of(BOUND_DOUBLE);
+    assertThat(basicComponent.getBoxedFloat()).isEqualTo(BOUND_FLOAT);
+    assertThat(basicComponent.getBoxedDouble()).isEqualTo(BOUND_DOUBLE);
   }
 
   @Theory public void boxedPrimitiveProviders(BasicComponent basicComponent) {
@@ -78,35 +78,36 @@ public class BasicTest {
     assertThat(basicComponent.getIntProvider().get()).isEqualTo(new Integer(BOUND_INT));
     assertThat(basicComponent.getLongProvider().get()).isEqualTo(new Long(BOUND_LONG));
     assertThat(basicComponent.getBooleanProvider().get()).isEqualTo(new Boolean(BOUND_BOOLEAN));
-    assertThat(basicComponent.getFloatProvider().get()).isWithin(0).of(BOUND_FLOAT);
-    assertThat(basicComponent.getDoubleProvider().get()).isWithin(0).of(BOUND_DOUBLE);
+    assertThat(basicComponent.getFloatProvider().get()).isEqualTo(BOUND_FLOAT);
+    assertThat(basicComponent.getDoubleProvider().get()).isEqualTo(BOUND_DOUBLE);
   }
 
   @Theory public void primitiveArrays(BasicComponent basicComponent) {
-    assertThat(basicComponent.getByteArray()).isSameAs(BOUND_BYTE_ARRAY);
-    assertThat(basicComponent.getCharArray()).isSameAs(BOUND_CHAR_ARRAY);
-    assertThat(basicComponent.getShortArray()).isSameAs(BOUND_SHORT_ARRAY);
-    assertThat(basicComponent.getIntArray()).isSameAs(BOUND_INT_ARRAY);
-    assertThat(basicComponent.getLongArray()).isSameAs(BOUND_LONG_ARRAY);
-    assertThat(basicComponent.getBooleanArray()).isSameAs(BOUND_BOOLEAN_ARRAY);
-    assertThat(basicComponent.getFloatArray()).isSameAs(BOUND_FLOAT_ARRAY);
-    assertThat(basicComponent.getDoubleArray()).isSameAs(BOUND_DOUBLE_ARRAY);
+    assertThat(basicComponent.getByteArray()).isSameInstanceAs(BOUND_BYTE_ARRAY);
+    assertThat(basicComponent.getCharArray()).isSameInstanceAs(BOUND_CHAR_ARRAY);
+    assertThat(basicComponent.getShortArray()).isSameInstanceAs(BOUND_SHORT_ARRAY);
+    assertThat(basicComponent.getIntArray()).isSameInstanceAs(BOUND_INT_ARRAY);
+    assertThat(basicComponent.getLongArray()).isSameInstanceAs(BOUND_LONG_ARRAY);
+    assertThat(basicComponent.getBooleanArray()).isSameInstanceAs(BOUND_BOOLEAN_ARRAY);
+    assertThat(basicComponent.getFloatArray()).isSameInstanceAs(BOUND_FLOAT_ARRAY);
+    assertThat(basicComponent.getDoubleArray()).isSameInstanceAs(BOUND_DOUBLE_ARRAY);
   }
 
   @Theory public void primitiveArrayProviders(BasicComponent basicComponent) {
-    assertThat(basicComponent.getByteArrayProvider().get()).isSameAs(BOUND_BYTE_ARRAY);
-    assertThat(basicComponent.getCharArrayProvider().get()).isSameAs(BOUND_CHAR_ARRAY);
-    assertThat(basicComponent.getShortArrayProvider().get()).isSameAs(BOUND_SHORT_ARRAY);
-    assertThat(basicComponent.getIntArrayProvider().get()).isSameAs(BOUND_INT_ARRAY);
-    assertThat(basicComponent.getLongArrayProvider().get()).isSameAs(BOUND_LONG_ARRAY);
-    assertThat(basicComponent.getBooleanArrayProvider().get()).isSameAs(BOUND_BOOLEAN_ARRAY);
-    assertThat(basicComponent.getFloatArrayProvider().get()).isSameAs(BOUND_FLOAT_ARRAY);
-    assertThat(basicComponent.getDoubleArrayProvider().get()).isSameAs(BOUND_DOUBLE_ARRAY);
+    assertThat(basicComponent.getByteArrayProvider().get()).isSameInstanceAs(BOUND_BYTE_ARRAY);
+    assertThat(basicComponent.getCharArrayProvider().get()).isSameInstanceAs(BOUND_CHAR_ARRAY);
+    assertThat(basicComponent.getShortArrayProvider().get()).isSameInstanceAs(BOUND_SHORT_ARRAY);
+    assertThat(basicComponent.getIntArrayProvider().get()).isSameInstanceAs(BOUND_INT_ARRAY);
+    assertThat(basicComponent.getLongArrayProvider().get()).isSameInstanceAs(BOUND_LONG_ARRAY);
+    assertThat(basicComponent.getBooleanArrayProvider().get())
+        .isSameInstanceAs(BOUND_BOOLEAN_ARRAY);
+    assertThat(basicComponent.getFloatArrayProvider().get()).isSameInstanceAs(BOUND_FLOAT_ARRAY);
+    assertThat(basicComponent.getDoubleArrayProvider().get()).isSameInstanceAs(BOUND_DOUBLE_ARRAY);
   }
 
   @Theory public void noOpMembersInjection(BasicComponent basicComponent) {
     Object object = new Object();
-    assertThat(basicComponent.noOpMembersInjection(object)).isSameAs(object);
+    assertThat(basicComponent.noOpMembersInjection(object)).isSameInstanceAs(object);
   }
 
   @Theory public void basicObject_noDeps(BasicComponent basicComponent) {
@@ -130,9 +131,9 @@ public class BasicTest {
         basicComponent.lazyInjectedThingProvider();
     Lazy<InjectedThing> lazyInjectedThing1 = lazyInjectedThingProvider.get();
     Lazy<InjectedThing> lazyInjectedThing2 = lazyInjectedThingProvider.get();
-    assertThat(lazyInjectedThing2).isNotSameAs(lazyInjectedThing1);
-    assertThat(lazyInjectedThing1.get()).isSameAs(lazyInjectedThing1.get());
-    assertThat(lazyInjectedThing2.get()).isSameAs(lazyInjectedThing2.get());
-    assertThat(lazyInjectedThing2.get()).isNotSameAs(lazyInjectedThing1.get());
+    assertThat(lazyInjectedThing2).isNotSameInstanceAs(lazyInjectedThing1);
+    assertThat(lazyInjectedThing1.get()).isSameInstanceAs(lazyInjectedThing1.get());
+    assertThat(lazyInjectedThing2.get()).isSameInstanceAs(lazyInjectedThing2.get());
+    assertThat(lazyInjectedThing2.get()).isNotSameInstanceAs(lazyInjectedThing1.get());
   }
 }
